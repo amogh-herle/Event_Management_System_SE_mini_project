@@ -2,56 +2,9 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createEventSchema } from "@/lib/validation";
 import { getAuthUserFromRequest, requireOrganizer } from "@/lib/auth";
+import { StoredEvent, inMemoryEvents } from "@/app/api/events/store";
 
-export interface StoredEvent {
-  id: string;
-  name: string;
-  description: string;
-  date: string;
-  time: string;
-  venue: string;
-  category: string;
-  capacity: number;
-  status: "ACTIVE" | "CANCELLED";
-  organizerId: string;
-  organizerName: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-// Fallback in-memory store for environments without a running database connection
-const inMemoryEvents: StoredEvent[] = [
-  {
-    id: "evt-seed-1",
-    name: "Tech Fest 2026",
-    description: "Annual university technical symposium featuring hackathons and keynote talks.",
-    date: "2026-10-10",
-    time: "10:00 AM",
-    venue: "Main Auditorium",
-    category: "Technology",
-    capacity: 100,
-    status: "ACTIVE",
-    organizerId: "organizer-demo-id",
-    organizerName: "Campus Organizer",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "evt-seed-2",
-    name: "Full Stack Workshop",
-    description: "Hands-on Next.js and Prisma masterclass for developers.",
-    date: "2026-10-15",
-    time: "02:00 PM",
-    venue: "Seminar Hall 2",
-    category: "Workshops",
-    capacity: 50,
-    status: "ACTIVE",
-    organizerId: "organizer-demo-id",
-    organizerName: "Campus Organizer",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
+export type { StoredEvent };
 
 export async function POST(request: Request) {
   // 1. Role-based Access Control (NFR-004, ST_02)
@@ -160,7 +113,7 @@ export async function POST(request: Request) {
     inMemoryEvents.unshift(formatted);
 
     return NextResponse.json({ event: formatted }, { status: 201 });
-  } catch (dbErr) {
+  } catch {
     // Graceful fallback to memory store if DB is disconnected/unreachable
     const fallbackEvent: StoredEvent = {
       id: "evt-" + Math.random().toString(36).substring(2, 9),
@@ -186,14 +139,20 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const organizerFilter = searchParams.get("organizer");
+  // FR-006a: "active" param — when "true" only return ACTIVE events (excludes CANCELLED)
+  const activeOnly = searchParams.get("active") === "true";
   const auth = getAuthUserFromRequest(request);
 
   try {
-    const whereClause: { organizerId?: string } = {};
+    const whereClause: { organizerId?: string; status?: "ACTIVE" } = {};
     if (organizerFilter === "me") {
       whereClause.organizerId = auth.id;
     } else if (organizerFilter) {
       whereClause.organizerId = organizerFilter;
+    }
+    // FR-006a: exclude CANCELLED events from public listing
+    if (activeOnly) {
+      whereClause.status = "ACTIVE";
     }
 
     const events = await prisma.event.findMany({
@@ -225,11 +184,14 @@ export async function GET(request: Request) {
     return NextResponse.json({ events: mapped });
   } catch {
     // In-memory fallback
-    let list = inMemoryEvents;
+    let list = [...inMemoryEvents];
     if (organizerFilter === "me") {
       list = list.filter((e) => e.organizerId === auth.id);
     } else if (organizerFilter) {
       list = list.filter((e) => e.organizerId === organizerFilter);
+    }
+    if (activeOnly) {
+      list = list.filter((e) => e.status === "ACTIVE");
     }
     return NextResponse.json({ events: list });
   }
