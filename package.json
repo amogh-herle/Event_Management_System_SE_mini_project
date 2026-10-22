@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "test:fr004a": "ts-node -O \"{\\\"module\\\":\\\"commonjs\\\"}\" scripts/test_fr004a.ts"
   },
   "dependencies": {
     "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
@@ -27,6 +28,7 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "prisma": "^5.20.0",
+    "ts-node": "^10.9.2",
     "typescript": "^5.5.3"
   }
 }
