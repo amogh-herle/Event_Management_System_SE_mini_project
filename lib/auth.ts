@@ -29,7 +29,13 @@ export const DEMO_ADMIN: AuthUser = {
   role: Role.ADMIN,
 };
 
-export function getAuthUserFromRequest(request?: Request): AuthUser {
+// Demo-role auth stand-in: there is no real session system yet (FR-002 login
+// isn't built), so identity is claimed via an explicit x-user-role header or
+// event_session_role cookie. The one rule that actually matters: no claim
+// means NOT authenticated. It must never default to the most-privileged role
+// — that was the auth bypass (an unauthenticated POST /api/events was being
+// treated as ORGANIZER and could create events with zero credentials).
+export function getAuthUserFromRequest(request?: Request): AuthUser | null {
   let roleHeader: string | null = null;
   let cookieRole: string | null = null;
 
@@ -53,24 +59,38 @@ export function getAuthUserFromRequest(request?: Request): AuthUser {
     }
   }
 
-  const effectiveRole = (roleHeader || cookieRole || "ORGANIZER").toUpperCase();
+  const claim = (roleHeader || cookieRole)?.toUpperCase();
+  if (!claim) {
+    return null;
+  }
 
-  if (effectiveRole === "PARTICIPANT") {
+  if (claim === "PARTICIPANT") {
     return DEMO_PARTICIPANT;
   }
-  if (effectiveRole === "ADMIN") {
+  if (claim === "ADMIN") {
     return DEMO_ADMIN;
   }
-  return DEMO_ORGANIZER;
+  if (claim === "ORGANIZER") {
+    return DEMO_ORGANIZER;
+  }
+  return null;
 }
 
-export function requireOrganizer(request?: Request): {
-  authorized: boolean;
-  user: AuthUser;
-  error?: string;
-  status?: number;
-} {
+type AuthResult =
+  | { authorized: true; user: AuthUser }
+  | { authorized: false; user: AuthUser | null; error: string; status: number };
+
+export function requireOrganizer(request?: Request): AuthResult {
   const user = getAuthUserFromRequest(request);
+
+  if (!user) {
+    return {
+      authorized: false,
+      user: null,
+      error: "Authentication required",
+      status: 401,
+    };
+  }
 
   if (user.role !== Role.ORGANIZER && user.role !== Role.ADMIN) {
     return {

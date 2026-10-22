@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Brand } from "../components/AuthShell";
-import { RoleSwitcher, RoleType } from "../components/RoleSwitcher";
+import { RoleSwitcher } from "../components/RoleSwitcher";
+import { useSessionRole } from "@/lib/useSessionRole";
 import {
   AlertIcon,
   CalendarIcon,
@@ -26,22 +27,12 @@ type ConfirmModal =
 export default function EventsDirectoryPage() {
   const [events, setEvents] = useState<StoredEvent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [role, setRole] = useState<RoleType>("ORGANIZER");
+  const [role, setRole] = useSessionRole();
   const [tab, setTab] = useState<"organizer" | "all">("organizer");
   const [search, setSearch] = useState("");
   const [confirmModal, setConfirmModal] = useState<ConfirmModal>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const match = document.cookie.match(/event_session_role=([^;]+)/);
-    if (match) {
-      const saved = decodeURIComponent(match[1]).toUpperCase() as RoleType;
-      if (saved === "ORGANIZER" || saved === "PARTICIPANT" || saved === "ADMIN") {
-        setRole(saved);
-      }
-    }
-  }, []);
 
   function loadEvents() {
     setLoading(true);
@@ -66,16 +57,17 @@ export default function EventsDirectoryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, role]);
 
-  const filteredEvents = events.filter((e) => {
-    if (!search.trim()) return true;
+  const filteredEvents = useMemo(() => {
+    if (!search.trim()) return events;
     const q = search.toLowerCase();
-    return (
-      e.name.toLowerCase().includes(q) ||
-      e.category.toLowerCase().includes(q) ||
-      e.venue.toLowerCase().includes(q) ||
-      e.description.toLowerCase().includes(q)
+    return events.filter(
+      (e) =>
+        e.name.toLowerCase().includes(q) ||
+        e.category.toLowerCase().includes(q) ||
+        e.venue.toLowerCase().includes(q) ||
+        e.description.toLowerCase().includes(q)
     );
-  });
+  }, [events, search]);
 
   // ── Cancel action ─────────────────────────────────────────────────────────
   async function handleCancel(event: StoredEvent) {

@@ -1,7 +1,58 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireOrganizer } from "@/lib/auth";
 import { inMemoryEvents } from "@/app/api/events/store";
+
+// ─────────────────────────────────────────────
+// GET /api/events/[id]  — Fetch a single event
+// ─────────────────────────────────────────────
+export async function GET(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  const { id } = params;
+
+  try {
+    const event = await prisma.event.findUnique({
+      where: { id },
+      include: { organizer: { select: { id: true, name: true, email: true } } },
+    });
+
+    if (!event) {
+      return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      event: {
+        id: event.id,
+        name: event.name,
+        description: event.description,
+        date: event.date.toISOString().slice(0, 10),
+        time: event.time,
+        venue: event.venue,
+        category: event.category,
+        capacity: event.capacity,
+        status: event.status,
+        organizerId: event.organizerId,
+        organizerName: event.organizer.name,
+        createdAt: event.createdAt.toISOString(),
+        updatedAt: event.updatedAt.toISOString(),
+      },
+    });
+  } catch (err) {
+    if (!(err instanceof Prisma.PrismaClientInitializationError)) {
+      console.error("[events/:id] failed to fetch event:", err);
+      return NextResponse.json({ error: "Failed to load event" }, { status: 500 });
+    }
+
+    const found = inMemoryEvents.find((e) => e.id === id);
+    if (!found) {
+      return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    }
+    return NextResponse.json({ event: found });
+  }
+}
 
 // ─────────────────────────────────────────────
 // PATCH /api/events/[id]  — Cancel an event
@@ -76,38 +127,50 @@ export async function PATCH(
         updatedAt: updated.updatedAt.toISOString(),
       },
     });
-  } catch {
-    // ── In-memory fallback ─────────────────────────────────────────────────
-    const idx = inMemoryEvents.findIndex((e) => e.id === id);
-    if (idx === -1) {
+  } catch (err) {
+    // Only degrade to the in-memory store for a genuinely unreachable
+    // database — not for every error, which would otherwise mean a real
+    // failure gets silently redirected to stale seed data (or reports
+    // "not found" for an event that actually exists and wasn't touched).
+    if (err instanceof Prisma.PrismaClientInitializationError) {
+      const idx = inMemoryEvents.findIndex((e) => e.id === id);
+      if (idx === -1) {
+        return NextResponse.json({ error: "Event not found" }, { status: 404 });
+      }
+
+      if (inMemoryEvents[idx].organizerId !== auth.user.id) {
+        return NextResponse.json(
+          { error: "Forbidden: you are not the organizer of this event" },
+          { status: 403 }
+        );
+      }
+
+      if (inMemoryEvents[idx].status === "CANCELLED") {
+        return NextResponse.json(
+          { error: "Event is already cancelled" },
+          { status: 409 }
+        );
+      }
+
+      inMemoryEvents[idx].status = "CANCELLED";
+      inMemoryEvents[idx].updatedAt = new Date().toISOString();
+
+      return NextResponse.json({
+        event: {
+          id: inMemoryEvents[idx].id,
+          name: inMemoryEvents[idx].name,
+          status: inMemoryEvents[idx].status,
+          updatedAt: inMemoryEvents[idx].updatedAt,
+        },
+      });
+    }
+
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
-    if (inMemoryEvents[idx].organizerId !== auth.user.id) {
-      return NextResponse.json(
-        { error: "Forbidden: you are not the organizer of this event" },
-        { status: 403 }
-      );
-    }
-
-    if (inMemoryEvents[idx].status === "CANCELLED") {
-      return NextResponse.json(
-        { error: "Event is already cancelled" },
-        { status: 409 }
-      );
-    }
-
-    inMemoryEvents[idx].status = "CANCELLED";
-    inMemoryEvents[idx].updatedAt = new Date().toISOString();
-
-    return NextResponse.json({
-      event: {
-        id: inMemoryEvents[idx].id,
-        name: inMemoryEvents[idx].name,
-        status: inMemoryEvents[idx].status,
-        updatedAt: inMemoryEvents[idx].updatedAt,
-      },
-    });
+    console.error("[events/:id] failed to cancel event:", err);
+    return NextResponse.json({ error: "Failed to cancel event" }, { status: 500 });
   }
 }
 
@@ -150,21 +213,29 @@ export async function DELETE(
     if (idx !== -1) inMemoryEvents.splice(idx, 1);
 
     return new NextResponse(null, { status: 204 });
-  } catch {
-    // ── In-memory fallback ─────────────────────────────────────────────────
-    const idx = inMemoryEvents.findIndex((e) => e.id === id);
-    if (idx === -1) {
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientInitializationError) {
+      const idx = inMemoryEvents.findIndex((e) => e.id === id);
+      if (idx === -1) {
+        return NextResponse.json({ error: "Event not found" }, { status: 404 });
+      }
+
+      if (inMemoryEvents[idx].organizerId !== auth.user.id) {
+        return NextResponse.json(
+          { error: "Forbidden: you are not the organizer of this event" },
+          { status: 403 }
+        );
+      }
+
+      inMemoryEvents.splice(idx, 1);
+      return new NextResponse(null, { status: 204 });
+    }
+
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
-    if (inMemoryEvents[idx].organizerId !== auth.user.id) {
-      return NextResponse.json(
-        { error: "Forbidden: you are not the organizer of this event" },
-        { status: 403 }
-      );
-    }
-
-    inMemoryEvents.splice(idx, 1);
-    return new NextResponse(null, { status: 204 });
+    console.error("[events/:id] failed to delete event:", err);
+    return NextResponse.json({ error: "Failed to delete event" }, { status: 500 });
   }
 }

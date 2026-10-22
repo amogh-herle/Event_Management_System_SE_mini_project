@@ -1,22 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { ShieldIcon, UserIcon } from "./icons";
+import { useSessionRole, type RoleType } from "@/lib/useSessionRole";
 
-export type RoleType = "ORGANIZER" | "PARTICIPANT" | "ADMIN";
+export type { RoleType };
 
 export function RoleSwitcher({ onRoleChange }: { onRoleChange?: (role: RoleType) => void }) {
-  const [role, setRole] = useState<RoleType>("ORGANIZER");
-
-  useEffect(() => {
-    const match = document.cookie.match(/event_session_role=([^;]+)/);
-    if (match) {
-      const saved = decodeURIComponent(match[1]).toUpperCase() as RoleType;
-      if (saved === "ORGANIZER" || saved === "PARTICIPANT" || saved === "ADMIN") {
-        setRole(saved);
-      }
-    }
-  }, []);
+  const [role, setRole] = useSessionRole();
 
   function switchRole(newRole: RoleType) {
     setRole(newRole);
