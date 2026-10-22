@@ -13,6 +13,11 @@ enum Role {
   PARTICIPANT
 }
 
+enum EventStatus {
+  ACTIVE
+  CANCELLED
+}
+
 model User {
   id           String   @id @default(cuid())
   name         String
@@ -22,4 +27,34 @@ model User {
   verified     Boolean  @default(false)
   suspended    Boolean  @default(false)
   createdAt    DateTime @default(now())
+  events       Event[]
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  events    Event[]
+}
+
+model Event {
+  id          String      @id @default(cuid())
+  name        String
+  description String
+  date        DateTime
+  time        String
+  venue       String
+  category    String
+  categoryId  String?
+  categoryRel Category?   @relation(fields: [categoryId], references: [id])
+  capacity    Int
+  status      EventStatus @default(ACTIVE)
+  organizerId String
+  organizer   User        @relation(fields: [organizerId], references: [id])
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([organizerId])
+  @@index([status])
+  @@index([category])
 }
