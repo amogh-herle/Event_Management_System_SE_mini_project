@@ -19,15 +19,28 @@ enum EventStatus {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  name         String
-  email        String   @unique
-  passwordHash String
-  role         Role     @default(PARTICIPANT)
-  verified     Boolean  @default(false)
-  suspended    Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  events       Event[]
+  id                 String               @id @default(cuid())
+  name               String
+  email              String               @unique
+  passwordHash       String
+  role               Role                 @default(PARTICIPANT)
+  verified           Boolean              @default(false)
+  suspended          Boolean              @default(false)
+  createdAt          DateTime             @default(now())
+  verificationTokens VerificationToken[]
+  events             Event[]
+}
+
+model VerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Category {
