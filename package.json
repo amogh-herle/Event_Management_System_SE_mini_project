@@ -9,7 +9,7 @@
     "lint": "next lint",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "test:fr004a": "ts-node -O \"{\\\"module\\\":\\\"commonjs\\\"}\" scripts/test_fr004a.ts"
+    "test:fr004a": "ts-node -O \"{\\\"module\\\":\\\"commonjs\\\"}\" -r tsconfig-paths/register scripts/test_fr004a.ts"
   },
   "dependencies": {
     "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
@@ -29,6 +29,7 @@
     "@types/react-dom": "^18.3.0",
     "prisma": "^5.20.0",
     "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
     "typescript": "^5.5.3"
   }
 }
