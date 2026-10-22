@@ -5,15 +5,23 @@ import Link from "next/link";
 import { Brand } from "../components/AuthShell";
 import { RoleSwitcher, RoleType } from "../components/RoleSwitcher";
 import {
+  AlertIcon,
   CalendarIcon,
   ClockIcon,
   MapPinIcon,
   PlusIcon,
   TagIcon,
-  UsersIcon,
   TicketIcon,
+  TrashIcon,
+  UsersIcon,
+  XCircleIcon,
 } from "../components/icons";
-import { StoredEvent } from "../api/events/route";
+import { StoredEvent } from "../api/events/store";
+
+type ConfirmModal =
+  | { type: "cancel"; event: StoredEvent }
+  | { type: "delete"; event: StoredEvent }
+  | null;
 
 export default function EventsDirectoryPage() {
   const [events, setEvents] = useState<StoredEvent[]>([]);
@@ -21,6 +29,9 @@ export default function EventsDirectoryPage() {
   const [role, setRole] = useState<RoleType>("ORGANIZER");
   const [tab, setTab] = useState<"organizer" | "all">("organizer");
   const [search, setSearch] = useState("");
+  const [confirmModal, setConfirmModal] = useState<ConfirmModal>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     const match = document.cookie.match(/event_session_role=([^;]+)/);
@@ -32,12 +43,14 @@ export default function EventsDirectoryPage() {
     }
   }, []);
 
-  useEffect(() => {
+  function loadEvents() {
     setLoading(true);
-    const url = tab === "organizer" ? "/api/events?organizer=me" : "/api/events";
-    fetch(url, {
-      headers: { "x-user-role": role },
-    })
+    // FR-006a: "All Events" tab always requests active=true (no cancelled events shown)
+    const url =
+      tab === "organizer"
+        ? "/api/events?organizer=me"
+        : "/api/events?active=true";
+    fetch(url, { headers: { "x-user-role": role } })
       .then((res) => res.json())
       .then((data) => {
         if (data.events && Array.isArray(data.events)) {
@@ -46,6 +59,11 @@ export default function EventsDirectoryPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    loadEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, role]);
 
   const filteredEvents = events.filter((e) => {
@@ -58,6 +76,59 @@ export default function EventsDirectoryPage() {
       e.description.toLowerCase().includes(q)
     );
   });
+
+  // ── Cancel action ─────────────────────────────────────────────────────────
+  async function handleCancel(event: StoredEvent) {
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/events/${event.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-user-role": role },
+        body: JSON.stringify({ action: "cancel" }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setActionError(data.error ?? "Failed to cancel event");
+        return;
+      }
+      // Optimistically update the status in state
+      setEvents((prev) =>
+        prev.map((e) =>
+          e.id === event.id ? { ...e, status: "CANCELLED" } : e
+        )
+      );
+      setConfirmModal(null);
+    } catch {
+      setActionError("An error occurred. Please try again.");
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  // ── Delete action ─────────────────────────────────────────────────────────
+  async function handleDelete(event: StoredEvent) {
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/events/${event.id}`, {
+        method: "DELETE",
+        headers: { "x-user-role": role },
+      });
+      if (!res.ok && res.status !== 204) {
+        const data = await res.json().catch(() => ({}));
+        setActionError(data.error ?? "Failed to delete event");
+        return;
+      }
+      // Remove from state
+      setEvents((prev) => prev.filter((e) => e.id !== event.id));
+      setConfirmModal(null);
+    } catch {
+      setActionError("An error occurred. Please try again.");
+    } finally {
+      setActionLoading(false);
+    }
+  }
 
   return (
     <div className="events-directory-page">
@@ -77,11 +148,11 @@ export default function EventsDirectoryPage() {
         <div className="directory-header">
           <div>
             <span className="badge badge-primary">Event Directory</span>
-            <h1>{tab === "organizer" ? "My Organizer Events" : "All Campus Events"}</h1>
+            <h1>{tab === "organizer" ? "My Organizer Events" : "All Active Events"}</h1>
             <p className="lede">
               {tab === "organizer"
-                ? "Manage and monitor your published events, seat capacities, and schedules."
-                : "Browse all upcoming events across clubs, departments, and organizations."}
+                ? "Manage and monitor your published events — cancel or remove events that are no longer needed."
+                : "Browse all upcoming active events across clubs, departments, and organizations."}
             </p>
           </div>
 
@@ -113,7 +184,7 @@ export default function EventsDirectoryPage() {
               onClick={() => setTab("all")}
               className={`tab-btn ${tab === "all" ? "active" : ""}`}
             >
-              All Events
+              All Active Events
             </button>
           </div>
 
@@ -141,7 +212,7 @@ export default function EventsDirectoryPage() {
             <p>
               {tab === "organizer"
                 ? "You haven't created any events yet. Publish your first event to get started!"
-                : "No matching events found. Try adjusting your search query."}
+                : "No active events found. Try adjusting your search query."}
             </p>
             {role === "ORGANIZER" && (
               <Link href="/events/create" className="btn btn-primary">
@@ -152,9 +223,11 @@ export default function EventsDirectoryPage() {
         ) : (
           <div className="event-cards-grid">
             {filteredEvents.map((event) => (
-              <article key={event.id} className="event-item-card">
+              <article key={event.id} className={`event-item-card${event.status === "CANCELLED" ? " event-card-cancelled" : ""}`}>
                 <div className="card-top-row">
-                  <span className="category-pill">{event.category}</span>
+                  <span className="category-pill">
+                    <TagIcon size={12} /> {event.category}
+                  </span>
                   <span
                     className={`status-pill ${
                       event.status === "ACTIVE" ? "status-active" : "status-cancelled"
@@ -190,12 +263,122 @@ export default function EventsDirectoryPage() {
                   <span className="organizer-tag">
                     Organizer: <strong>{event.organizerName}</strong>
                   </span>
+
+                  {/* FR-005a: Cancel / Delete actions — only for owning organizer */}
+                  {role === "ORGANIZER" && tab === "organizer" && (
+                    <div className="card-actions">
+                      {event.status === "ACTIVE" && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-warning"
+                          onClick={() => {
+                            setActionError(null);
+                            setConfirmModal({ type: "cancel", event });
+                          }}
+                          aria-label={`Cancel event: ${event.name}`}
+                        >
+                          <XCircleIcon size={14} /> Cancel
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-danger"
+                        onClick={() => {
+                          setActionError(null);
+                          setConfirmModal({ type: "delete", event });
+                        }}
+                        aria-label={`Delete event: ${event.name}`}
+                      >
+                        <TrashIcon size={14} /> Delete
+                      </button>
+                    </div>
+                  )}
                 </div>
               </article>
             ))}
           </div>
         )}
       </main>
+
+      {/* ── Confirmation Modal ─────────────────────────────────────────────── */}
+      {confirmModal && (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-modal-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setConfirmModal(null);
+          }}
+        >
+          <div className="modal-card">
+            <div className={`modal-icon ${confirmModal.type === "delete" ? "modal-icon-danger" : "modal-icon-warning"}`}>
+              {confirmModal.type === "delete" ? (
+                <TrashIcon size={28} />
+              ) : (
+                <XCircleIcon size={28} />
+              )}
+            </div>
+
+            <h2 id="confirm-modal-title" className="modal-title">
+              {confirmModal.type === "cancel"
+                ? "Cancel this event?"
+                : "Delete this event?"}
+            </h2>
+
+            <p className="modal-desc">
+              {confirmModal.type === "cancel" ? (
+                <>
+                  <strong>&quot;{confirmModal.event.name}&quot;</strong> will be marked as{" "}
+                  <strong>Cancelled</strong>. It will stop accepting new registrations and will
+                  no longer appear in the active events listing for participants.
+                </>
+              ) : (
+                <>
+                  <strong>&quot;{confirmModal.event.name}&quot;</strong> will be{" "}
+                  <strong>permanently deleted</strong> and cannot be recovered.
+                </>
+              )}
+            </p>
+
+            {actionError && (
+              <div className="banner-alert banner-danger" role="alert">
+                <AlertIcon size={16} />
+                <span>{actionError}</span>
+              </div>
+            )}
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className={`btn ${confirmModal.type === "delete" ? "btn-danger" : "btn-warning"} btn-md`}
+                disabled={actionLoading}
+                onClick={() =>
+                  confirmModal.type === "cancel"
+                    ? handleCancel(confirmModal.event)
+                    : handleDelete(confirmModal.event)
+                }
+              >
+                {actionLoading ? (
+                  <><span className="spinner" /> Processing...</>
+                ) : confirmModal.type === "cancel" ? (
+                  <><XCircleIcon size={16} /> Yes, Cancel Event</>
+                ) : (
+                  <><TrashIcon size={16} /> Yes, Delete Event</>
+                )}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-md"
+                disabled={actionLoading}
+                onClick={() => setConfirmModal(null)}
+              >
+                Keep Event
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

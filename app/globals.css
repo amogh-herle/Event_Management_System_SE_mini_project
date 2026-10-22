@@ -1439,3 +1439,156 @@ a:hover {
   margin: 0 0 12px;
   max-width: 44ch;
 }
+
+/* ==========================================================================
+   FR-005a: Event Cancel / Delete Styles
+   ========================================================================== */
+
+/* Cancelled card visual treatment */
+.event-card-cancelled {
+  opacity: 0.72;
+  border-color: var(--danger);
+  background: linear-gradient(135deg, var(--surface), var(--danger-soft));
+}
+
+.event-card-cancelled .card-event-title {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+/* Card footer action buttons row */
+.card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Warning button (for cancel) */
+.btn-warning {
+  background: var(--warning-soft, #fff7e6);
+  color: var(--warning, #b45309);
+  border: 1.5px solid var(--warning, #b45309);
+}
+
+.btn-warning:hover:not(:disabled) {
+  background: var(--warning, #b45309);
+  color: #fff;
+}
+
+/* Danger button (for delete) */
+.btn-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border: 1.5px solid var(--danger);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* Medium button size */
+.btn-md {
+  min-height: 44px;
+  padding: 0 20px;
+  font-size: 15px;
+}
+
+/* ── Confirmation Modal ──────────────────────────────────────────────────── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(10, 10, 20, 0.6);
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.modal-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.2);
+  padding: 40px 36px 32px;
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+  animation: slideUp 0.18s ease;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.modal-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  margin: 0 auto 20px;
+  display: grid;
+  place-items: center;
+}
+
+.modal-icon-warning {
+  background: var(--warning-soft, #fff7e6);
+  color: var(--warning, #b45309);
+}
+
+.modal-icon-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.modal-title {
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  margin: 0 0 12px;
+}
+
+.modal-desc {
+  font-size: 15px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: 0 0 24px;
+}
+
+.modal-desc strong {
+  color: var(--text);
+}
+
+.modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@media (min-width: 480px) {
+  .modal-actions {
+    flex-direction: row;
+    justify-content: center;
+  }
+}
+
+/* CSS variable additions for warning color */
+:root {
+  --warning: #b45309;
+  --warning-soft: #fef3c7;
+}
