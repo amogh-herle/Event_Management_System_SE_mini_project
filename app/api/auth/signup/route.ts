@@ -3,6 +3,9 @@ import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { signupSchema } from "@/lib/validation";
+import { createVerificationToken } from "@/lib/tokens";
+import { sendMail } from "@/lib/mailer";
+import { verificationEmail } from "@/lib/emailTemplates";
 
 const DUPLICATE_EMAIL_ERROR = "An account with this email already exists";
 
@@ -35,8 +38,19 @@ export async function POST(request: Request) {
   try {
     const user = await prisma.user.create({
       data: { name, email, passwordHash },
-      // verified defaults to false — activation happens in FR-001b (email verification)
+      // verified defaults to false — activated via the link sent below
     });
+
+    try {
+      const rawToken = await createVerificationToken(user.id);
+      const verifyUrl = `${new URL(request.url).origin}/verify?token=${rawToken}`;
+      const { subject, html } = verificationEmail(user.name, verifyUrl);
+      await sendMail(user.email, subject, html);
+    } catch (mailErr) {
+      // Don't fail the signup over a transient mail-delivery issue — the
+      // account exists and the user can request a new link via resend.
+      console.error("[signup] failed to send verification email:", mailErr);
+    }
 
     return NextResponse.json(
       { id: user.id, name: user.name, email: user.email, verified: user.verified },
