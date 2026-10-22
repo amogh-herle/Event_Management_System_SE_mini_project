@@ -7,10 +7,10 @@ console.log("=== RUNNING FR-004a AUTOMATED TEST SUITE ===\n");
 let passed = 0;
 let total = 0;
 
-function it(name: string, fn: () => void) {
+async function it(name: string, fn: () => void | Promise<void>) {
   total++;
   try {
-    fn();
+    await fn();
     console.log(`[PASS] ${name}`);
     passed++;
   } catch (err) {
@@ -19,8 +19,10 @@ function it(name: string, fn: () => void) {
   }
 }
 
+async function main() {
+
 // 1. UT_01: Valid event creation with all required fields
-it("UT_01: Verify an event is created when all required fields are valid", () => {
+await it("UT_01: Verify an event is created when all required fields are valid", () => {
   const input = {
     name: "Tech Fest",
     description: "Annual technology festival with hackathons and workshops.",
@@ -42,7 +44,7 @@ it("UT_01: Verify an event is created when all required fields are valid", () =>
 });
 
 // 2. UT_02: Event creation fails when a required field is missing (e.g. blank capacity)
-it("UT_02: Verify event creation fails when a required field is missing (capacity blank)", () => {
+await it("UT_02: Verify event creation fails when a required field is missing (capacity blank)", () => {
   const input = {
     name: "Tech Fest",
     description: "Annual technology festival",
@@ -65,7 +67,7 @@ it("UT_02: Verify event creation fails when a required field is missing (capacit
 });
 
 // 3. IT_02: Capacity field only accepts a positive integer (-5 rejected)
-it("IT_02: Verify capacity field only accepts a positive integer (capacity: -5 rejected)", () => {
+await it("IT_02: Verify capacity field only accepts a positive integer (capacity: -5 rejected)", () => {
   const input = {
     name: "Tech Fest",
     description: "Annual technology festival",
@@ -88,8 +90,8 @@ it("IT_02: Verify capacity field only accepts a positive integer (capacity: -5 r
 });
 
 // 4. ST_02: Access Control: Participant cannot create an event
-it("ST_02: Verify a Participant cannot create an event via access control (403 Forbidden)", () => {
-  const auth = requireOrganizer({
+await it("ST_02: Verify a Participant cannot create an event via access control (403 Forbidden)", async () => {
+  const auth = await requireOrganizer({
     headers: {
       get: (k: string) => (k.toLowerCase() === "x-user-role" ? "PARTICIPANT" : null),
     },
@@ -104,8 +106,8 @@ it("ST_02: Verify a Participant cannot create an event via access control (403 F
 });
 
 // 5. Organizer IS authorized
-it("Access Control: Organizer is authorized to create events", () => {
-  const auth = requireOrganizer({
+await it("Access Control: Organizer is authorized to create events", async () => {
+  const auth = await requireOrganizer({
     headers: {
       get: (k: string) => (k.toLowerCase() === "x-user-role" ? "ORGANIZER" : null),
     },
@@ -115,8 +117,8 @@ it("Access Control: Organizer is authorized to create events", () => {
 });
 
 // 5b. Security regression: no role claim at all must NOT default to Organizer
-it("Access Control: a request with no x-user-role header and no cookie is rejected (401), not defaulted to Organizer", () => {
-  const auth = requireOrganizer({
+await it("Access Control: a request with no x-user-role header and no cookie is rejected (401), not defaulted to Organizer", async () => {
+  const auth = await requireOrganizer({
     headers: {
       get: () => null,
     },
@@ -128,7 +130,7 @@ it("Access Control: a request with no x-user-role header and no cookie is reject
 });
 
 // 6. Additional boundary tests: Missing other required fields
-it("Validation: Rejects missing event name", () => {
+await it("Validation: Rejects missing event name", () => {
   const input = {
     name: "",
     description: "Some description",
@@ -143,7 +145,7 @@ it("Validation: Rejects missing event name", () => {
   assert.ok(parsed.error.issues[0]?.message.toLowerCase().includes("name"));
 });
 
-it("Validation: Rejects missing date", () => {
+await it("Validation: Rejects missing date", () => {
   const input = {
     name: "Concert",
     description: "Some description",
@@ -158,7 +160,7 @@ it("Validation: Rejects missing date", () => {
   assert.ok(parsed.error.issues[0]?.message.toLowerCase().includes("date"));
 });
 
-it("Validation: Rejects capacity = 0", () => {
+await it("Validation: Rejects capacity = 0", () => {
   const input = {
     name: "Concert",
     description: "Some description",
@@ -177,3 +179,10 @@ console.log(`\n=== ALL ${passed}/${total} FR-004a TESTS PASSED SUCCESSFULLY! ===
 if (passed !== total) {
   process.exit(1);
 }
+
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
