@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createEventSchema } from "@/lib/validation";
 import { getAuthUserFromRequest, requireOrganizer } from "@/lib/auth";
@@ -92,10 +93,13 @@ export async function POST(request: Request) {
 
   // 4. Persist event
   try {
-    // Ensure organizer user exists in database
+    // Ensure the demo organizer user row exists. Only set role/fields on
+    // first creation — never overwrite on update, since auth.user.role is
+    // client-controlled (demo auth) and every POST would otherwise silently
+    // reset whatever role is actually stored for this id.
     await prisma.user.upsert({
       where: { id: auth.user.id },
-      update: { role: auth.user.role },
+      update: {},
       create: {
         id: auth.user.id,
         name: auth.user.name,
@@ -106,7 +110,10 @@ export async function POST(request: Request) {
       },
     });
 
-    // Optional category relation
+    // Optional category relation — losing this link isn't fatal to event
+    // creation, but only swallow the specific "table not migrated yet"
+    // case; any other error (e.g. a genuine unique-constraint race) gets
+    // logged instead of silently disappearing.
     let categoryId: string | undefined;
     try {
       const cat = await prisma.category.upsert({
@@ -115,8 +122,10 @@ export async function POST(request: Request) {
         create: { name: category },
       });
       categoryId = cat.id;
-    } catch {
-      // ignore category table if not yet migrated
+    } catch (catErr) {
+      if (!(catErr instanceof Prisma.PrismaClientKnownRequestError && catErr.code === "P2021")) {
+        console.error("[events] category upsert failed, continuing without category link:", catErr);
+      }
     }
 
     const eventDate = new Date(date);
@@ -157,29 +166,35 @@ export async function POST(request: Request) {
       updatedAt: created.updatedAt.toISOString(),
     };
 
-    inMemoryEvents.unshift(formatted);
-
     return NextResponse.json({ event: formatted }, { status: 201 });
   } catch (dbErr) {
-    // Graceful fallback to memory store if DB is disconnected/unreachable
-    const fallbackEvent: StoredEvent = {
-      id: "evt-" + Math.random().toString(36).substring(2, 9),
-      name,
-      description,
-      date,
-      time,
-      venue,
-      category,
-      capacity,
-      status: "ACTIVE",
-      organizerId: auth.user.id,
-      organizerName: auth.user.name,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    // Only degrade to the in-memory store when the database is genuinely
+    // unreachable (connection/init failure) — not for every error. A real
+    // data error (bad constraint, overflow, etc.) must surface as a real
+    // error response, not a fake 201 that silently isn't persisted.
+    if (dbErr instanceof Prisma.PrismaClientInitializationError) {
+      const fallbackEvent: StoredEvent = {
+        id: "evt-" + Math.random().toString(36).substring(2, 9),
+        name,
+        description,
+        date,
+        time,
+        venue,
+        category,
+        capacity,
+        status: "ACTIVE",
+        organizerId: auth.user.id,
+        organizerName: auth.user.name,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
 
-    inMemoryEvents.unshift(fallbackEvent);
-    return NextResponse.json({ event: fallbackEvent }, { status: 201 });
+      inMemoryEvents.unshift(fallbackEvent);
+      return NextResponse.json({ event: fallbackEvent }, { status: 201 });
+    }
+
+    console.error("[events] failed to create event:", dbErr);
+    return NextResponse.json({ error: "Failed to create event" }, { status: 500 });
   }
 }
 
@@ -192,12 +207,14 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
 
+  // "me" (resolved server-side from auth) or no filter (public browse) are
+  // the only supported options. An arbitrary organizer id was previously
+  // accepted here too, letting anyone enumerate any other organizer's full
+  // event list by id with zero authorization.
   try {
     const whereClause: { organizerId?: string } = {};
     if (organizerFilter === "me" && auth) {
       whereClause.organizerId = auth.id;
-    } else if (organizerFilter) {
-      whereClause.organizerId = organizerFilter;
     }
 
     const events = await prisma.event.findMany({
@@ -227,13 +244,16 @@ export async function GET(request: Request) {
     }));
 
     return NextResponse.json({ events: mapped });
-  } catch {
-    // In-memory fallback
+  } catch (err) {
+    if (!(err instanceof Prisma.PrismaClientInitializationError)) {
+      console.error("[events] failed to list events:", err);
+      return NextResponse.json({ error: "Failed to load events" }, { status: 500 });
+    }
+
+    // Database genuinely unreachable — serve the in-memory fallback.
     let list = inMemoryEvents;
     if (organizerFilter === "me" && auth) {
       list = list.filter((e) => e.organizerId === auth.id);
-    } else if (organizerFilter) {
-      list = list.filter((e) => e.organizerId === organizerFilter);
     }
     return NextResponse.json({ events: list });
   }

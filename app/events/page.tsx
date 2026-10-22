@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Brand } from "../components/AuthShell";
-import { RoleSwitcher, RoleType } from "../components/RoleSwitcher";
+import { RoleSwitcher } from "../components/RoleSwitcher";
+import { useSessionRole } from "@/lib/useSessionRole";
 import {
   CalendarIcon,
   ClockIcon,
@@ -18,19 +19,9 @@ import { StoredEvent } from "../api/events/route";
 export default function EventsDirectoryPage() {
   const [events, setEvents] = useState<StoredEvent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [role, setRole] = useState<RoleType>("ORGANIZER");
+  const [role, setRole] = useSessionRole();
   const [tab, setTab] = useState<"organizer" | "all">("organizer");
   const [search, setSearch] = useState("");
-
-  useEffect(() => {
-    const match = document.cookie.match(/event_session_role=([^;]+)/);
-    if (match) {
-      const saved = decodeURIComponent(match[1]).toUpperCase() as RoleType;
-      if (saved === "ORGANIZER" || saved === "PARTICIPANT" || saved === "ADMIN") {
-        setRole(saved);
-      }
-    }
-  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -48,16 +39,17 @@ export default function EventsDirectoryPage() {
       .finally(() => setLoading(false));
   }, [tab, role]);
 
-  const filteredEvents = events.filter((e) => {
-    if (!search.trim()) return true;
+  const filteredEvents = useMemo(() => {
+    if (!search.trim()) return events;
     const q = search.toLowerCase();
-    return (
-      e.name.toLowerCase().includes(q) ||
-      e.category.toLowerCase().includes(q) ||
-      e.venue.toLowerCase().includes(q) ||
-      e.description.toLowerCase().includes(q)
+    return events.filter(
+      (e) =>
+        e.name.toLowerCase().includes(q) ||
+        e.category.toLowerCase().includes(q) ||
+        e.venue.toLowerCase().includes(q) ||
+        e.description.toLowerCase().includes(q)
     );
-  });
+  }, [events, search]);
 
   return (
     <div className="events-directory-page">
