@@ -114,6 +114,19 @@ it("Access Control: Organizer is authorized to create events", () => {
   assert.strictEqual(auth.authorized, true, "Organizer must be authorized");
 });
 
+// 5b. Security regression: no role claim at all must NOT default to Organizer
+it("Access Control: a request with no x-user-role header and no cookie is rejected (401), not defaulted to Organizer", () => {
+  const auth = requireOrganizer({
+    headers: {
+      get: () => null,
+    },
+  } as unknown as Request);
+
+  assert.strictEqual(auth.authorized, false, "An unauthenticated request must NOT be authorized");
+  assert.strictEqual(auth.status, 401, "Must return 401 Unauthorized, not silently become 403 or succeed");
+  assert.strictEqual(auth.user, null, "No demo user should be attached to an unauthenticated request");
+});
+
 // 6. Additional boundary tests: Missing other required fields
 it("Validation: Rejects missing event name", () => {
   const input = {

@@ -188,9 +188,13 @@ export async function GET(request: Request) {
   const organizerFilter = searchParams.get("organizer");
   const auth = getAuthUserFromRequest(request);
 
+  if (organizerFilter === "me" && !auth) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+
   try {
     const whereClause: { organizerId?: string } = {};
-    if (organizerFilter === "me") {
+    if (organizerFilter === "me" && auth) {
       whereClause.organizerId = auth.id;
     } else if (organizerFilter) {
       whereClause.organizerId = organizerFilter;
@@ -226,7 +230,7 @@ export async function GET(request: Request) {
   } catch {
     // In-memory fallback
     let list = inMemoryEvents;
-    if (organizerFilter === "me") {
+    if (organizerFilter === "me" && auth) {
       list = list.filter((e) => e.organizerId === auth.id);
     } else if (organizerFilter) {
       list = list.filter((e) => e.organizerId === organizerFilter);
