@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Brand } from "../../components/AuthShell";
-import { RoleSwitcher, RoleType } from "../../components/RoleSwitcher";
+import { RoleSwitcher } from "../../components/RoleSwitcher";
+import { useSessionRole, type RoleType } from "@/lib/useSessionRole";
 import {
   AlertIcon,
   ArrowRightIcon,
@@ -51,7 +52,7 @@ const DEFAULT_CATEGORIES = [
 
 export default function CreateEventPage() {
   const router = useRouter();
-  const [role, setRole] = useState<RoleType>("ORGANIZER");
+  const [role, setRole] = useSessionRole();
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [touched, setTouched] = useState<Partial<Record<keyof FormState, boolean>>>({});
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
@@ -59,17 +60,6 @@ export default function CreateEventPage() {
   const [serverError, setServerError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [createdEvent, setCreatedEvent] = useState<{ id: string; name: string } | null>(null);
-
-  // Read active role from cookie
-  useEffect(() => {
-    const match = document.cookie.match(/event_session_role=([^;]+)/);
-    if (match) {
-      const saved = decodeURIComponent(match[1]).toUpperCase() as RoleType;
-      if (saved === "ORGANIZER" || saved === "PARTICIPANT" || saved === "ADMIN") {
-        setRole(saved);
-      }
-    }
-  }, []);
 
   // Fetch categories from API
   useEffect(() => {
@@ -110,6 +100,9 @@ export default function CreateEventPage() {
         const num = Number(value);
         if (isNaN(num) || !Number.isInteger(num) || num <= 0) {
           return "Invalid capacity: capacity must be a positive integer";
+        }
+        if (num > 100_000) {
+          return "Invalid capacity: must be 100,000 or less";
         }
         return undefined;
     }

@@ -17,12 +17,14 @@ const BASE = process.env.BASE_URL || "http://localhost:3000";
 async function req(
   method: string,
   path: string,
-  opts: { role?: string; body?: unknown } = {}
+  opts: { role?: string; noAuth?: boolean; body?: unknown } = {}
 ) {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "x-user-role": opts.role ?? "ORGANIZER",
   };
+  if (!opts.noAuth) {
+    headers["x-user-role"] = opts.role ?? "ORGANIZER";
+  }
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers,
@@ -134,6 +136,16 @@ async function run() {
     role: "PARTICIPANT",
   });
   assert("TC-6: Participant delete blocked (403)", badDel.status === 403);
+
+  // TC-7: No auth claim at all is rejected (401), not defaulted to Organizer
+  const noAuthCancel = await req("PATCH", `/api/events/${eventId3}`, {
+    noAuth: true,
+    body: { action: "cancel" },
+  });
+  assert("TC-7: Cancel with no auth header returns 401", noAuthCancel.status === 401);
+
+  const noAuthDelete = await req("DELETE", `/api/events/${eventId3}`, { noAuth: true });
+  assert("TC-7b: Delete with no auth header returns 401", noAuthDelete.status === 401);
 
   console.log(`\n=== Results: ${passed} passed, ${failed} failed ===\n`);
   process.exit(failed > 0 ? 1 : 0);

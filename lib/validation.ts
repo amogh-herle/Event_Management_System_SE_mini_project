@@ -70,6 +70,16 @@ export const createEventSchema = z.object({
           });
           return;
         }
+        // Prisma's Int maps to Postgres's 4-byte signed integer (max
+        // 2147483647); without a bound here, a value above that passes
+        // validation and then throws at the database layer.
+        if (num > 100_000) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Invalid capacity: must be 100,000 or less",
+          });
+          return;
+        }
       })
     )
     .transform((val) => Number(val)),
