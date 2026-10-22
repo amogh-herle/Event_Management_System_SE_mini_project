@@ -13,16 +13,22 @@ enum Role {
   PARTICIPANT
 }
 
+enum EventStatus {
+  ACTIVE
+  CANCELLED
+}
+
 model User {
-  id                  String               @id @default(cuid())
-  name                String
-  email               String               @unique
-  passwordHash        String
-  role                Role                 @default(PARTICIPANT)
-  verified            Boolean              @default(false)
-  suspended           Boolean              @default(false)
-  createdAt           DateTime             @default(now())
-  verificationTokens  VerificationToken[]
+  id                 String               @id @default(cuid())
+  name               String
+  email              String               @unique
+  passwordHash       String
+  role               Role                 @default(PARTICIPANT)
+  verified           Boolean              @default(false)
+  suspended          Boolean              @default(false)
+  createdAt          DateTime             @default(now())
+  verificationTokens VerificationToken[]
+  events             Event[]
 }
 
 model VerificationToken {
@@ -35,4 +41,33 @@ model VerificationToken {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  events    Event[]
+}
+
+model Event {
+  id          String      @id @default(cuid())
+  name        String
+  description String
+  date        DateTime
+  time        String
+  venue       String
+  category    String
+  categoryId  String?
+  categoryRel Category?   @relation(fields: [categoryId], references: [id])
+  capacity    Int
+  status      EventStatus @default(ACTIVE)
+  organizerId String
+  organizer   User        @relation(fields: [organizerId], references: [id])
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([organizerId])
+  @@index([status])
+  @@index([category])
 }
