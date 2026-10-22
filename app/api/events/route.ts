@@ -65,7 +65,8 @@ export async function POST(request: Request) {
 
     // Optional category relation — losing this link isn't fatal to event
     // creation, but only swallow the specific "table not migrated yet"
-    // case; any other error gets logged instead of silently disappearing.
+    // case; any other error (e.g. a genuine unique-constraint race) gets
+    // logged instead of silently disappearing.
     let categoryId: string | undefined;
     try {
       const cat = await prisma.category.upsert({
@@ -122,8 +123,8 @@ export async function POST(request: Request) {
   } catch (dbErr) {
     // Only degrade to the in-memory store when the database is genuinely
     // unreachable (connection/init failure) — not for every error. A real
-    // data error must surface as a real error response, not a fake 201
-    // that silently isn't persisted.
+    // data error (bad constraint, overflow, etc.) must surface as a real
+    // error response, not a fake 201 that silently isn't persisted.
     if (dbErr instanceof Prisma.PrismaClientInitializationError) {
       const fallbackEvent: StoredEvent = {
         id: "evt-" + Math.random().toString(36).substring(2, 9),
