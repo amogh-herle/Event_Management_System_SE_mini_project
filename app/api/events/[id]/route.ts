@@ -206,6 +206,17 @@ export async function DELETE(
       );
     }
 
+    const registrationCount = await prisma.registration.count({ where: { eventId: id } });
+    if (registrationCount > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Cannot delete an event with existing registrations. Cancel it instead so participants are notified.",
+        },
+        { status: 409 }
+      );
+    }
+
     await prisma.event.delete({ where: { id } });
 
     // Mirror to in-memory store

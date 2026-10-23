@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { registerForEvent, checkUserRegistration } from "@/lib/registration";
+import { registerForEvent, checkUserRegistration, AUTH_REQUIRED_ERROR } from "@/lib/registration";
 import { getAuthUserFromRequest } from "@/lib/auth";
 
 export async function POST(
@@ -7,40 +7,29 @@ export async function POST(
   context: { params: { id: string } }
 ) {
   const eventId = context.params.id;
-  let body: any = {};
 
   try {
     const text = await request.text();
-    if (text) {
-      body = JSON.parse(text);
-    }
+    if (text) JSON.parse(text);
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
+  // Identity must come from a verified session/demo-role claim, never from a
+  // client-supplied header or body field — otherwise any caller could
+  // register as an arbitrary other user.
   const sessionUser = await getAuthUserFromRequest(request);
+  if (!sessionUser) {
+    return NextResponse.json({ error: AUTH_REQUIRED_ERROR }, { status: 401 });
+  }
 
-  const userId =
-    sessionUser?.id ||
-    request.headers.get("x-user-id") ||
-    body?.userId ||
-    undefined;
-
-  const userEmail =
-    sessionUser?.email ||
-    request.headers.get("x-user-email") ||
-    body?.userEmail ||
-    body?.email ||
-    undefined;
-
-  const result = await registerForEvent({
-    eventId,
-    userId,
-    userEmail,
-  });
+  const result = await registerForEvent({ eventId, userId: sessionUser.id });
 
   if (!result.success) {
-    return NextResponse.json({ error: result.error }, { status: result.statusCode });
+    return NextResponse.json(
+      { error: result.error, registration: result.registration },
+      { status: result.statusCode }
+    );
   }
 
   return NextResponse.json(result.registration, { status: result.statusCode });
@@ -51,20 +40,12 @@ export async function GET(
   context: { params: { id: string } }
 ) {
   const eventId = context.params.id;
-  const { searchParams } = new URL(request.url);
 
   const sessionUser = await getAuthUserFromRequest(request);
-
-  const userId =
-    sessionUser?.id ||
-    request.headers.get("x-user-id") ||
-    searchParams.get("userId") ||
-    undefined;
-
-  if (!userId) {
-    return NextResponse.json({ error: "User ID is required" }, { status: 400 });
+  if (!sessionUser) {
+    return NextResponse.json({ error: AUTH_REQUIRED_ERROR }, { status: 401 });
   }
 
-  const result = await checkUserRegistration(userId, eventId);
+  const result = await checkUserRegistration(sessionUser.id, eventId);
   return NextResponse.json(result);
 }

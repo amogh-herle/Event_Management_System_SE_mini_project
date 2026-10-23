@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { Role } from "@prisma/client";
 import { registerEventSchema } from "@/lib/validation";
-import { registerForEvent, listRegistrations } from "@/lib/registration";
+import { registerForEvent, listRegistrations, AUTH_REQUIRED_ERROR } from "@/lib/registration";
 import { getAuthUserFromRequest } from "@/lib/auth";
 
 export async function POST(request: Request) {
@@ -19,29 +20,22 @@ export async function POST(request: Request) {
     );
   }
 
-  const { eventId } = parsed.data;
+  // Identity must come from a verified session/demo-role claim, never from a
+  // client-supplied header or body field — otherwise any caller could
+  // register as an arbitrary other user.
   const sessionUser = await getAuthUserFromRequest(request);
+  if (!sessionUser) {
+    return NextResponse.json({ error: AUTH_REQUIRED_ERROR }, { status: 401 });
+  }
 
-  const userId =
-    sessionUser?.id ||
-    request.headers.get("x-user-id") ||
-    parsed.data.userId ||
-    undefined;
-
-  const userEmail =
-    sessionUser?.email ||
-    request.headers.get("x-user-email") ||
-    parsed.data.userEmail ||
-    undefined;
-
-  const result = await registerForEvent({
-    eventId,
-    userId,
-    userEmail,
-  });
+  const { eventId } = parsed.data;
+  const result = await registerForEvent({ eventId, userId: sessionUser.id });
 
   if (!result.success) {
-    return NextResponse.json({ error: result.error }, { status: result.statusCode });
+    return NextResponse.json(
+      { error: result.error, registration: result.registration },
+      { status: result.statusCode }
+    );
   }
 
   return NextResponse.json(result.registration, { status: result.statusCode });
@@ -49,18 +43,23 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const sessionUser = await getAuthUserFromRequest(request);
 
-  const userId =
-    sessionUser?.id ||
-    request.headers.get("x-user-id") ||
-    searchParams.get("userId") ||
-    undefined;
+  const sessionUser = await getAuthUserFromRequest(request);
+  if (!sessionUser) {
+    return NextResponse.json({ error: AUTH_REQUIRED_ERROR }, { status: 401 });
+  }
+
   const eventId = searchParams.get("eventId") || undefined;
+
+  // Organizers/admins may list every registration for an event they're
+  // looking up (the attendee roster); everyone else can only ever see their
+  // own registrations — a caller-supplied userId is never trusted.
+  const isPrivileged = sessionUser.role === Role.ORGANIZER || sessionUser.role === Role.ADMIN;
+  const userId = isPrivileged && eventId ? undefined : sessionUser.id;
 
   if (!userId && !eventId) {
     return NextResponse.json(
-      { error: "Either userId or eventId query parameter is required" },
+      { error: "eventId query parameter is required" },
       { status: 400 }
     );
   }
