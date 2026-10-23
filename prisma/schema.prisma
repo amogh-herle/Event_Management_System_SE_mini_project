@@ -13,13 +13,57 @@ enum Role {
   PARTICIPANT
 }
 
+enum RegistrationStatus {
+  CONFIRMED
+  WAITLISTED
+  CANCELLED
+}
+
 model User {
-  id           String   @id @default(cuid())
-  name         String
-  email        String   @unique
-  passwordHash String
-  role         Role     @default(PARTICIPANT)
-  verified     Boolean  @default(false)
-  suspended    Boolean  @default(false)
-  createdAt    DateTime @default(now())
+  id              String         @id @default(cuid())
+  name            String
+  email           String         @unique
+  passwordHash    String
+  role            Role           @default(PARTICIPANT)
+  verified        Boolean        @default(false)
+  suspended       Boolean        @default(false)
+  createdAt       DateTime       @default(now())
+  registrations   Registration[]
+  organizedEvents Event[]        @relation("OrganizedEvents")
+}
+
+model Event {
+  id            String         @id @default(cuid())
+  title         String
+  description   String?
+  date          DateTime
+  time          String?
+  venue         String?
+  category      String?
+  capacity      Int            @default(100)
+  isCancelled   Boolean        @default(false)
+  organizerId   String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  organizer     User?          @relation("OrganizedEvents", fields: [organizerId], references: [id], onDelete: SetNull)
+  registrations Registration[]
+
+  @@index([organizerId])
+}
+
+model Registration {
+  id        String             @id @default(cuid())
+  userId    String
+  eventId   String
+  status    RegistrationStatus @default(CONFIRMED)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventId])
+  @@index([userId])
+  @@index([eventId])
 }
