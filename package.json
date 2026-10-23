@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test": "tsx --test tests/**/*.test.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "test:fr004a": "ts-node -O \"{\\\"module\\\":\\\"commonjs\\\"}\" -r tsconfig-paths/register scripts/test_fr004a.ts"
@@ -22,6 +23,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@next/swc-win32-x64-msvc": "^14.2.33",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.14.9",
     "@types/nodemailer": "^8.0.2",
@@ -30,6 +32,7 @@
     "prisma": "^5.20.0",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.5.3"
   }
 }

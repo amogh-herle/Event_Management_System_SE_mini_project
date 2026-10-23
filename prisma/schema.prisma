@@ -18,6 +18,12 @@ enum EventStatus {
   CANCELLED
 }
 
+enum RegistrationStatus {
+  CONFIRMED
+  WAITLISTED
+  CANCELLED
+}
+
 model User {
   id                 String               @id @default(cuid())
   name               String
@@ -29,6 +35,7 @@ model User {
   createdAt          DateTime             @default(now())
   verificationTokens VerificationToken[]
   events             Event[]
+  registrations      Registration[]
 }
 
 model VerificationToken {
@@ -51,23 +58,40 @@ model Category {
 }
 
 model Event {
-  id          String      @id @default(cuid())
-  name        String
-  description String
-  date        DateTime
-  time        String
-  venue       String
-  category    String
-  categoryId  String?
-  categoryRel Category?   @relation(fields: [categoryId], references: [id])
-  capacity    Int
-  status      EventStatus @default(ACTIVE)
-  organizerId String
-  organizer   User        @relation(fields: [organizerId], references: [id])
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id            String         @id @default(cuid())
+  name          String
+  description   String
+  date          DateTime
+  time          String
+  venue         String
+  category      String
+  categoryId    String?
+  categoryRel   Category?      @relation(fields: [categoryId], references: [id])
+  capacity      Int
+  status        EventStatus    @default(ACTIVE)
+  organizerId   String
+  organizer     User           @relation(fields: [organizerId], references: [id])
+  registrations Registration[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
   @@index([organizerId])
   @@index([status])
   @@index([category])
+}
+
+model Registration {
+  id        String             @id @default(cuid())
+  userId    String
+  eventId   String
+  status    RegistrationStatus @default(CONFIRMED)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventId])
+  @@index([userId])
+  @@index([eventId])
 }
