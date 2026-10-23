@@ -17,3 +17,11 @@ export const signupSchema = z.object({
 });
 
 export type SignupInput = z.infer<typeof signupSchema>;
+
+export const registerEventSchema = z.object({
+  eventId: z.string().trim().min(1, "Event ID is required"),
+  userId: z.string().trim().min(1, "User ID is required").optional(),
+  userEmail: z.string().trim().toLowerCase().email("Invalid user email").optional(),
+});
+
+export type RegisterEventInput = z.infer<typeof registerEventSchema>;
