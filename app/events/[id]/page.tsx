@@ -5,6 +5,7 @@ import { Brand } from "@/app/components/AuthShell";
 import { CalendarIcon, SparkIcon, TicketIcon } from "@/app/components/icons";
 import { RegisterButton } from "./RegisterButton";
 import { EventStatus } from "@prisma/client";
+import { getEventCapacity } from "@/lib/registration";
 
 interface EventPageProps {
   params: { id: string };
@@ -47,6 +48,19 @@ export default async function EventPage({ params }: EventPageProps) {
     event.status === EventStatus.CANCELLED ||
     event.status === "CANCELLED" ||
     event.isCancelled === true;
+
+  let capacityInfo: { capacity: number; confirmedCount: number; remainingSeats: number; isFull: boolean } | null = null;
+  try {
+    if (event?.id && event.id !== "demo" && event.id !== "tech-fest") {
+      capacityInfo = await getEventCapacity(event.id);
+    }
+  } catch {
+    // If DB is offline or table uninitialized
+  }
+
+  const capacity = typeof event.capacity === "number" ? event.capacity : 100;
+  const remainingSeats = capacityInfo ? capacityInfo.remainingSeats : capacity;
+  const isFull = capacityInfo ? capacityInfo.isFull : remainingSeats <= 0;
 
   const eventName = event.name || event.title || "Untitled Event";
 
@@ -115,6 +129,20 @@ export default async function EventPage({ params }: EventPageProps) {
               >
                 Cancelled
               </span>
+            ) : isFull ? (
+              <span
+                className="badge badge-danger"
+                style={{
+                  background: "var(--danger-soft)",
+                  color: "var(--danger)",
+                  padding: "0.35rem 0.85rem",
+                  borderRadius: "999px",
+                  fontWeight: 600,
+                  fontSize: "0.85rem",
+                }}
+              >
+                Event Full
+              </span>
             ) : (
               <span
                 className="badge badge-success"
@@ -167,11 +195,18 @@ export default async function EventPage({ params }: EventPageProps) {
               <strong style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--text-muted)", fontSize: "0.85rem" }}>
                 <TicketIcon size={16} /> Capacity
               </strong>
-              <div style={{ marginTop: "0.25rem", fontWeight: 600 }}>{event.capacity} seats</div>
+              <div style={{ marginTop: "0.25rem", fontWeight: 600 }}>
+                {capacity} seats {isFull ? "(Full)" : `(${remainingSeats} left)`}
+              </div>
             </div>
           </div>
 
-          <RegisterButton eventId={event.id} isCancelled={isCancelled} />
+          <RegisterButton
+            eventId={event.id}
+            isCancelled={isCancelled}
+            isFull={isFull}
+            remainingSeats={remainingSeats}
+          />
         </article>
       </main>
     </div>

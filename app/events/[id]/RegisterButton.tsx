@@ -7,12 +7,16 @@ interface RegisterButtonProps {
   eventId: string;
   isCancelled?: boolean;
   initialRegistered?: boolean;
+  isFull?: boolean;
+  remainingSeats?: number;
 }
 
 export function RegisterButton({
   eventId,
   isCancelled = false,
   initialRegistered = false,
+  isFull = false,
+  remainingSeats,
 }: RegisterButtonProps) {
   const [step, setStep] = useState<"idle" | "confirming" | "submitting" | "confirmed">("idle");
   const [isRegistered, setIsRegistered] = useState(initialRegistered);
@@ -50,6 +54,26 @@ export function RegisterButton({
     );
   }
 
+  // FR-008 / ST_02: Page displays 'Event Full' and the Register button is disabled
+  if (isFull || (remainingSeats !== undefined && remainingSeats <= 0)) {
+    return (
+      <div className="registration-flow" style={{ marginTop: "1.5rem" }}>
+        <div className="alert alert-warn" role="alert" style={{ marginBottom: "1rem" }}>
+          <span>Event Full — all available seats have been booked. Registrations are closed.</span>
+        </div>
+        <button
+          type="button"
+          className="btn"
+          disabled
+          aria-disabled="true"
+          style={{ opacity: 0.6, cursor: "not-allowed" }}
+        >
+          Event Full
+        </button>
+      </div>
+    );
+  }
+
   async function handleRegister() {
     setStep("submitting");
     setError(null);
@@ -65,7 +89,7 @@ export function RegisterButton({
       if (!res.ok) {
         setError(data.error || "Registration failed");
         setStep("idle");
-        if (res.status === 409) {
+        if (res.status === 409 && data.error === "Already registered for this event") {
           setIsRegistered(true);
         }
         return;
