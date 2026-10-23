@@ -45,6 +45,9 @@ export default function HomePage() {
           <Link href="/events/create" className="btn btn-ghost">
             <PlusIcon size={16} /> Create Event
           </Link>
+          <Link href="/login" className="btn btn-ghost">
+            Log in
+          </Link>
           <Link href="/signup" className="btn btn-primary">
             Sign up
           </Link>
