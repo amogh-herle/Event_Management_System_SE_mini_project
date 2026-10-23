@@ -2,7 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { POST as registerEventRoutePost, GET as registerEventRouteGet } from "../app/api/events/[id]/register/route";
 import { POST as registrationsRoutePost, GET as registrationsRouteGet } from "../app/api/registrations/route";
-import { DUPLICATE_REGISTRATION_ERROR, EVENT_CANCELLED_ERROR, EVENT_NOT_FOUND_ERROR, AUTH_REQUIRED_ERROR } from "../lib/registration";
+import {
+  DUPLICATE_REGISTRATION_ERROR,
+  EVENT_CANCELLED_ERROR,
+  EVENT_NOT_FOUND_ERROR,
+  AUTH_REQUIRED_ERROR,
+  EVENT_FULL_ERROR,
+} from "../lib/registration";
 import { prisma } from "../lib/prisma";
 import { Prisma, RegistrationStatus, EventStatus } from "@prisma/client";
 
@@ -20,6 +26,20 @@ function createMockDb() {
     suspended: false,
   });
 
+  users.set("u2", {
+    id: "u2",
+    name: "Priya Nair",
+    email: "priya.nair@test.com",
+    suspended: false,
+  });
+
+  users.set("u_seed", {
+    id: "u_seed",
+    name: "Seed User",
+    email: "seed@test.com",
+    suspended: false,
+  });
+
   events.set("evt1", {
     id: "evt1",
     name: "Tech Fest",
@@ -27,6 +47,7 @@ function createMockDb() {
     date: new Date("2026-10-10"),
     status: EventStatus.ACTIVE,
     isCancelled: false,
+    capacity: 100,
   });
 
   events.set("evt_cancelled", {
@@ -36,6 +57,27 @@ function createMockDb() {
     date: new Date("2026-10-10"),
     status: EventStatus.CANCELLED,
     isCancelled: true,
+    capacity: 50,
+  });
+
+  events.set("evt_full", {
+    id: "evt_full",
+    name: "Full Workshop",
+    title: "Full Workshop",
+    date: new Date("2026-10-15"),
+    status: EventStatus.ACTIVE,
+    isCancelled: false,
+    capacity: 1,
+  });
+
+  // Seed 1 confirmed registration so evt_full has 0 seats left
+  registrations.set("u_seed_evt_full", {
+    id: "reg_seed_full_1",
+    userId: "u_seed",
+    eventId: "evt_full",
+    status: RegistrationStatus.CONFIRMED,
+    createdAt: new Date(),
+    updatedAt: new Date(),
   });
 
   return {
@@ -70,6 +112,15 @@ function createMockDb() {
         return null;
       },
 
+      async count({ where }: any = {}) {
+        return Array.from(registrations.values()).filter((r) => {
+          if (where?.userId && r.userId !== where.userId) return false;
+          if (where?.eventId && r.eventId !== where.eventId) return false;
+          if (where?.status && r.status !== where.status) return false;
+          return true;
+        }).length;
+      },
+
       async create({ data, include }: any) {
         const key = `${data.userId}_${data.eventId}`;
         if (registrations.has(key)) {
@@ -96,6 +147,7 @@ function createMockDb() {
         return Array.from(registrations.values()).filter((r) => {
           if (where?.userId && r.userId !== where.userId) return false;
           if (where?.eventId && r.eventId !== where.eventId) return false;
+          if (where?.status && r.status !== where.status) return false;
           return true;
         });
       },
@@ -197,6 +249,18 @@ test("API: POST /api/events/[id]/register returns 401 when no auth provided", as
   assert.equal(data.error, AUTH_REQUIRED_ERROR);
 });
 
+test("API: POST /api/events/[id]/register returns 400 when event is full", async () => {
+  const req = new Request("http://localhost:3000/api/events/evt_full/register", {
+    method: "POST",
+    headers: { "x-user-id": "u2" },
+  });
+
+  const res = await registerEventRoutePost(req, { params: { id: "evt_full" } });
+  assert.equal(res.status, 400);
+  const data = await res.json();
+  assert.equal(data.error, EVENT_FULL_ERROR);
+});
+
 test("API: GET /api/events/[id]/register returns 400 when userId is missing", async () => {
   const req = new Request("http://localhost:3000/api/events/evt1/register", {
     method: "GET",
@@ -248,6 +312,19 @@ test("API: POST /api/registrations returns 400 when eventId is missing", async (
   assert.equal(res.status, 400);
   const data = await res.json();
   assert.ok(data.error);
+});
+
+test("API: POST /api/registrations returns 400 when event is full", async () => {
+  const req = new Request("http://localhost:3000/api/registrations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ eventId: "evt_full", userId: "u2" }),
+  });
+
+  const res = await registrationsRoutePost(req);
+  assert.equal(res.status, 400);
+  const data = await res.json();
+  assert.equal(data.error, EVENT_FULL_ERROR);
 });
 
 test("API: POST /api/registrations creates registration and GET lists it", async () => {
