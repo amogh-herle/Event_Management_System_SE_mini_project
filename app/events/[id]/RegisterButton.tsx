@@ -3,10 +3,17 @@
 import { useState } from "react";
 import { CheckIcon, SparkIcon } from "@/app/components/icons";
 
+interface RegistrationDetails {
+  id: string;
+  timestamp: string | Date;
+  status: string;
+}
+
 interface RegisterButtonProps {
   eventId: string;
   isCancelled?: boolean;
   initialRegistered?: boolean;
+  initialRegistrationDetails?: RegistrationDetails;
   isFull?: boolean;
   remainingSeats?: number;
 }
@@ -15,17 +22,16 @@ export function RegisterButton({
   eventId,
   isCancelled = false,
   initialRegistered = false,
+  initialRegistrationDetails,
   isFull = false,
   remainingSeats,
 }: RegisterButtonProps) {
   const [step, setStep] = useState<"idle" | "confirming" | "submitting" | "confirmed">("idle");
   const [isRegistered, setIsRegistered] = useState(initialRegistered);
   const [error, setError] = useState<string | null>(null);
-  const [registrationDetails, setRegistrationDetails] = useState<{
-    id: string;
-    timestamp: string;
-    status: string;
-  } | null>(null);
+  const [registrationDetails, setRegistrationDetails] = useState<RegistrationDetails | null>(
+    initialRegistrationDetails ?? null
+  );
 
   if (isCancelled) {
     return (
@@ -91,6 +97,13 @@ export function RegisterButton({
         setStep("idle");
         if (res.status === 409 && data.error === "Already registered for this event") {
           setIsRegistered(true);
+          if (data.registration) {
+            setRegistrationDetails({
+              id: data.registration.id,
+              timestamp: data.registration.timestamp || data.registration.createdAt,
+              status: data.registration.status,
+            });
+          }
         }
         return;
       }

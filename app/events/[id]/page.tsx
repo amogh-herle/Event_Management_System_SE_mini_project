@@ -5,7 +5,8 @@ import { Brand } from "@/app/components/AuthShell";
 import { CalendarIcon, SparkIcon, TicketIcon } from "@/app/components/icons";
 import { RegisterButton } from "./RegisterButton";
 import { EventStatus } from "@prisma/client";
-import { getEventCapacity } from "@/lib/registration";
+import { getAuthUserFromRequest } from "@/lib/auth";
+import { checkUserRegistration, getEventCapacity } from "@/lib/registration";
 
 interface EventPageProps {
   params: { id: string };
@@ -61,6 +62,25 @@ export default async function EventPage({ params }: EventPageProps) {
   const capacity = typeof event.capacity === "number" ? event.capacity : 100;
   const remainingSeats = capacityInfo ? capacityInfo.remainingSeats : capacity;
   const isFull = capacityInfo ? capacityInfo.isFull : remainingSeats <= 0;
+
+  let initialRegistration: { id: string; status: string; timestamp: Date } | null = null;
+  try {
+    if (event?.id && event.id !== "demo" && event.id !== "tech-fest") {
+      const authUser = await getAuthUserFromRequest();
+      if (authUser) {
+        const regCheck = await checkUserRegistration(authUser.id, event.id);
+        if (regCheck.registered && regCheck.registration) {
+          initialRegistration = {
+            id: regCheck.registration.id,
+            status: regCheck.registration.status,
+            timestamp: regCheck.registration.timestamp,
+          };
+        }
+      }
+    }
+  } catch {
+    // If DB is offline or not configured yet in this environment
+  }
 
   const eventName = event.name || event.title || "Untitled Event";
 
@@ -206,6 +226,8 @@ export default async function EventPage({ params }: EventPageProps) {
             isCancelled={isCancelled}
             isFull={isFull}
             remainingSeats={remainingSeats}
+            initialRegistered={!!initialRegistration}
+            initialRegistrationDetails={initialRegistration ?? undefined}
           />
         </article>
       </main>
