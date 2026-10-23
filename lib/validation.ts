@@ -18,6 +18,15 @@ export const signupSchema = z.object({
 
 export type SignupInput = z.infer<typeof signupSchema>;
 
+export const loginSchema = z.object({
+  email: z.string().trim().toLowerCase().email("Enter a valid email address"),
+  // No complexity rules here — those only apply at signup time. A login
+  // attempt just needs a non-empty password to compare against the hash.
+  password: z.string().min(1, "Password is required"),
+});
+
+export type LoginInput = z.infer<typeof loginSchema>;
+
 export const createEventSchema = z.object({
   name: z
     .string({ required_error: "Required field missing: name" })
