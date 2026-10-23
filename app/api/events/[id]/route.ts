@@ -62,7 +62,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: { id: string } }
 ) {
-  const auth = requireOrganizer(request);
+  const auth = await requireOrganizer(request);
   if (!auth.authorized) {
     return NextResponse.json(
       { error: auth.error ?? "Access denied" },
@@ -181,7 +181,7 @@ export async function DELETE(
   request: Request,
   { params }: { params: { id: string } }
 ) {
-  const auth = requireOrganizer(request);
+  const auth = await requireOrganizer(request);
   if (!auth.authorized) {
     return NextResponse.json(
       { error: auth.error ?? "Access denied" },

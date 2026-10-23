@@ -9,7 +9,7 @@ export type { StoredEvent };
 
 export async function POST(request: Request) {
   // 1. Role-based Access Control (NFR-004, ST_02)
-  const auth = requireOrganizer(request);
+  const auth = await requireOrganizer(request);
   if (!auth.authorized) {
     return NextResponse.json(
       { error: auth.error ?? "Access denied: Only organizers can create events" },
@@ -156,7 +156,7 @@ export async function GET(request: Request) {
   const organizerFilter = searchParams.get("organizer");
   // FR-006a: "active" param — when "true" only return ACTIVE events (excludes CANCELLED)
   const activeOnly = searchParams.get("active") === "true";
-  const auth = getAuthUserFromRequest(request);
+  const auth = await getAuthUserFromRequest(request);
 
   if (organizerFilter === "me" && !auth) {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });

@@ -1,5 +1,7 @@
 import { cookies, headers } from "next/headers";
 import { Role } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { verifySessionValue } from "@/lib/session";
 
 export interface AuthUser {
   id: string;
@@ -29,36 +31,56 @@ export const DEMO_ADMIN: AuthUser = {
   role: Role.ADMIN,
 };
 
-// Demo-role auth stand-in: there is no real session system yet (FR-002 login
-// isn't built), so identity is claimed via an explicit x-user-role header or
-// event_session_role cookie. The one rule that actually matters: no claim
-// means NOT authenticated. It must never default to the most-privileged role
-// — that was the auth bypass (an unauthenticated POST /api/events was being
-// treated as ORGANIZER and could create events with zero credentials).
-export function getAuthUserFromRequest(request?: Request): AuthUser | null {
-  let roleHeader: string | null = null;
-  let cookieRole: string | null = null;
-
+function readCookie(request: Request | undefined, name: string): string | null {
   if (request) {
-    roleHeader = request.headers.get("x-user-role");
     const cookieHeader = request.headers.get("cookie") || "";
-    const match = cookieHeader.match(/event_session_role=([^;]+)/);
-    if (match) cookieRole = decodeURIComponent(match[1]);
-  } else {
-    try {
-      const h = headers();
-      roleHeader = h.get("x-user-role");
-    } catch {
-      // Not in server-request context
+    const match = cookieHeader.match(new RegExp(`${name}=([^;]+)`));
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+  try {
+    return cookies().get(name)?.value || null;
+  } catch {
+    return null;
+  }
+}
+
+function readRoleHeader(request: Request | undefined): string | null {
+  if (request) return request.headers.get("x-user-role");
+  try {
+    return headers().get("x-user-role");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolves the caller's identity: a real session (FR-002a login) takes
+ * priority when present; the demo x-user-role header / event_session_role
+ * cookie (predates real login, still used by the RoleSwitcher UI for
+ * quick role-testing) is a fallback for when there's no session at all.
+ *
+ * A session for a suspended/deleted account returns null directly — no
+ * falling back to the demo claim — so suspension takes effect on the very
+ * next request (FR-003a). An expired or missing session falls through to
+ * the demo claim, same as before real login existed.
+ */
+export async function getAuthUserFromRequest(request?: Request): Promise<AuthUser | null> {
+  const sessionValue = readCookie(request, "session");
+  if (sessionValue) {
+    const userId = verifySessionValue(sessionValue);
+    if (userId) {
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user || user.suspended) {
+        return null;
+      }
+      return { id: user.id, name: user.name, email: user.email, role: user.role };
     }
-    try {
-      const c = cookies();
-      cookieRole = c.get("event_session_role")?.value || null;
-    } catch {
-      // Not in cookies context
-    }
+    // Signature invalid or expired — not an attack signal, just "not
+    // logged in"; fall through to the demo claim below.
   }
 
+  const roleHeader = readRoleHeader(request);
+  const cookieRole = readCookie(request, "event_session_role");
   const claim = (roleHeader || cookieRole)?.toUpperCase();
   if (!claim) {
     return null;
@@ -80,8 +102,8 @@ type AuthResult =
   | { authorized: true; user: AuthUser }
   | { authorized: false; user: AuthUser | null; error: string; status: number };
 
-export function requireOrganizer(request?: Request): AuthResult {
-  const user = getAuthUserFromRequest(request);
+export async function requireOrganizer(request?: Request): Promise<AuthResult> {
+  const user = await getAuthUserFromRequest(request);
 
   if (!user) {
     return {
