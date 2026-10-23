@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { registerForEvent, checkUserRegistration } from "@/lib/registration";
+import { getAuthUserFromRequest } from "@/lib/auth";
 
 export async function POST(
   request: Request,
@@ -17,13 +18,16 @@ export async function POST(
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  // Extract user identity from headers or body
+  const sessionUser = await getAuthUserFromRequest(request);
+
   const userId =
+    sessionUser?.id ||
     request.headers.get("x-user-id") ||
     body?.userId ||
     undefined;
 
   const userEmail =
+    sessionUser?.email ||
     request.headers.get("x-user-email") ||
     body?.userEmail ||
     body?.email ||
@@ -49,7 +53,10 @@ export async function GET(
   const eventId = context.params.id;
   const { searchParams } = new URL(request.url);
 
+  const sessionUser = await getAuthUserFromRequest(request);
+
   const userId =
+    sessionUser?.id ||
     request.headers.get("x-user-id") ||
     searchParams.get("userId") ||
     undefined;

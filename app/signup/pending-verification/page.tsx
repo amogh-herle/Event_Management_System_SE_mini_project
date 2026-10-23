@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AuthShell } from "../../components/AuthShell";
 import { CheckIcon, MailIcon } from "../../components/icons";
+import { ResendButton } from "./ResendButton";
 
 export default function PendingVerificationPage({
   searchParams,
@@ -51,17 +52,11 @@ export default function PendingVerificationPage({
       </ol>
 
       <div className="actions">
-        {/* Resend wiring lands with FR-001b (email verification). */}
-        <button type="button" className="btn btn-primary btn-block" disabled aria-disabled="true">
-          Resend verification email
-        </button>
+        <ResendButton email={email} />
         <Link href="/signup" className="btn btn-ghost btn-block">
           Use a different email
         </Link>
       </div>
-      <p className="hint" style={{ textAlign: "center" }}>
-        Resending is enabled once email verification (FR-001b) ships.
-      </p>
     </AuthShell>
   );
 }

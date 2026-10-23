@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Prisma, RegistrationStatus } from "@prisma/client";
+import { Prisma, RegistrationStatus, EventStatus } from "@prisma/client";
 import {
   registerForEvent,
   checkUserRegistration,
@@ -84,7 +84,7 @@ function createMockDb() {
           createdAt: new Date(),
           updatedAt: new Date(),
           ...(include?.user ? { user: { id: user.id, name: user.name, email: user.email } } : {}),
-          ...(include?.event ? { event: { id: event.id, title: event.title, date: event.date, isCancelled: event.isCancelled } } : {}),
+          ...(include?.event ? { event: { id: event.id, name: event.name || event.title, date: event.date, status: event.status || (event.isCancelled ? EventStatus.CANCELLED : EventStatus.ACTIVE) } } : {}),
         };
 
         registrations.set(key, record);
@@ -105,7 +105,7 @@ function createMockDb() {
             }
             if (include?.event) {
               const e = events.get(updated.eventId);
-              updated.event = { id: e.id, title: e.title, date: e.date, isCancelled: e.isCancelled };
+              updated.event = { id: e.id, name: e.name || e.title, date: e.date, status: e.status || (e.isCancelled ? EventStatus.CANCELLED : EventStatus.ACTIVE) };
             }
             registrations.set(key, updated);
             return updated;
@@ -167,6 +167,7 @@ function seedData(db: ReturnType<typeof createMockDb>) {
   // Active Event: Tech Fest (from Test Case UT_01, UT_02)
   db.events.set("event_tech_fest", {
     id: "event_tech_fest",
+    name: "Tech Fest",
     title: "Tech Fest",
     description: "Annual technology fest and workshops.",
     date: new Date("2026-10-10T10:00:00Z"),
@@ -174,6 +175,7 @@ function seedData(db: ReturnType<typeof createMockDb>) {
     venue: "Main Auditorium",
     category: "Tech",
     capacity: 100,
+    status: EventStatus.ACTIVE,
     isCancelled: false,
     createdAt: new Date("2026-10-01T00:00:00Z"),
     updatedAt: new Date("2026-10-01T00:00:00Z"),
@@ -182,6 +184,7 @@ function seedData(db: ReturnType<typeof createMockDb>) {
   // Cancelled Event: Old Meetup (from Test Case ST_02)
   db.events.set("event_old_meetup", {
     id: "event_old_meetup",
+    name: "Old Meetup",
     title: "Old Meetup",
     description: "Past meetup event.",
     date: new Date("2026-09-01T10:00:00Z"),
@@ -189,6 +192,7 @@ function seedData(db: ReturnType<typeof createMockDb>) {
     venue: "Hall C",
     category: "Tech",
     capacity: 50,
+    status: EventStatus.CANCELLED,
     isCancelled: true,
     createdAt: new Date("2026-08-01T00:00:00Z"),
     updatedAt: new Date("2026-08-01T00:00:00Z"),

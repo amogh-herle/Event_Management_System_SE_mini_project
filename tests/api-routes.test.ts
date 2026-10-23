@@ -4,7 +4,7 @@ import { POST as registerEventRoutePost, GET as registerEventRouteGet } from "..
 import { POST as registrationsRoutePost, GET as registrationsRouteGet } from "../app/api/registrations/route";
 import { DUPLICATE_REGISTRATION_ERROR, EVENT_CANCELLED_ERROR, EVENT_NOT_FOUND_ERROR, AUTH_REQUIRED_ERROR } from "../lib/registration";
 import { prisma } from "../lib/prisma";
-import { Prisma, RegistrationStatus } from "@prisma/client";
+import { Prisma, RegistrationStatus, EventStatus } from "@prisma/client";
 
 function createMockDb() {
   const users = new Map<string, any>();
@@ -22,15 +22,19 @@ function createMockDb() {
 
   events.set("evt1", {
     id: "evt1",
+    name: "Tech Fest",
     title: "Tech Fest",
     date: new Date("2026-10-10"),
+    status: EventStatus.ACTIVE,
     isCancelled: false,
   });
 
   events.set("evt_cancelled", {
     id: "evt_cancelled",
+    name: "Cancelled Tech Fest",
     title: "Cancelled Tech Fest",
     date: new Date("2026-10-10"),
+    status: EventStatus.CANCELLED,
     isCancelled: true,
   });
 

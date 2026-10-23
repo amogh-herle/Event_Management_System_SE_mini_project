@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { registerEventSchema } from "@/lib/validation";
 import { registerForEvent, listRegistrations } from "@/lib/registration";
+import { getAuthUserFromRequest } from "@/lib/auth";
 
 export async function POST(request: Request) {
   let body: unknown;
@@ -19,12 +20,16 @@ export async function POST(request: Request) {
   }
 
   const { eventId } = parsed.data;
+  const sessionUser = await getAuthUserFromRequest(request);
+
   const userId =
+    sessionUser?.id ||
     request.headers.get("x-user-id") ||
     parsed.data.userId ||
     undefined;
 
   const userEmail =
+    sessionUser?.email ||
     request.headers.get("x-user-email") ||
     parsed.data.userEmail ||
     undefined;
@@ -44,7 +49,13 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const userId = request.headers.get("x-user-id") || searchParams.get("userId") || undefined;
+  const sessionUser = await getAuthUserFromRequest(request);
+
+  const userId =
+    sessionUser?.id ||
+    request.headers.get("x-user-id") ||
+    searchParams.get("userId") ||
+    undefined;
   const eventId = searchParams.get("eventId") || undefined;
 
   if (!userId && !eventId) {
