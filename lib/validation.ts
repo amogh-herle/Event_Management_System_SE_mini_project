@@ -18,6 +18,84 @@ export const signupSchema = z.object({
 
 export type SignupInput = z.infer<typeof signupSchema>;
 
+export const loginSchema = z.object({
+  email: z.string().trim().toLowerCase().email("Enter a valid email address"),
+  // No complexity rules here — those only apply at signup time. A login
+  // attempt just needs a non-empty password to compare against the hash.
+  password: z.string().min(1, "Password is required"),
+});
+
+export type LoginInput = z.infer<typeof loginSchema>;
+
+export const createEventSchema = z.object({
+  name: z
+    .string({ required_error: "Required field missing: name" })
+    .trim()
+    .min(1, "Required field missing: name")
+    .max(150, "Name must be at most 150 characters"),
+  description: z
+    .string({ required_error: "Required field missing: description" })
+    .trim()
+    .min(1, "Required field missing: description")
+    .max(2000, "Description must be at most 2000 characters"),
+  date: z
+    .string({ required_error: "Required field missing: date" })
+    .trim()
+    .min(1, "Required field missing: date")
+    .refine((val) => !isNaN(Date.parse(val)), {
+      message: "Enter a valid date",
+    }),
+  time: z
+    .string({ required_error: "Required field missing: time" })
+    .trim()
+    .min(1, "Required field missing: time")
+    .max(30, "Time must be at most 30 characters"),
+  venue: z
+    .string({ required_error: "Required field missing: venue" })
+    .trim()
+    .min(1, "Required field missing: venue")
+    .max(200, "Venue must be at most 200 characters"),
+  category: z
+    .string({ required_error: "Required field missing: category" })
+    .trim()
+    .min(1, "Required field missing: category")
+    .max(100, "Category must be at most 100 characters"),
+  capacity: z
+    .preprocess(
+      (val) => (val === "" || val === null || val === undefined ? undefined : val),
+      z.any().superRefine((val, ctx) => {
+        if (val === undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Required field missing: capacity",
+          });
+          return;
+        }
+        const num = Number(val);
+        if (isNaN(num) || !Number.isInteger(num) || num <= 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Invalid capacity: capacity must be a positive integer",
+          });
+          return;
+        }
+        // Prisma's Int maps to Postgres's 4-byte signed integer (max
+        // 2147483647); without a bound here, a value above that passes
+        // validation and then throws at the database layer.
+        if (num > 100_000) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Invalid capacity: must be 100,000 or less",
+          });
+          return;
+        }
+      })
+    )
+    .transform((val) => Number(val)),
+});
+
+export type CreateEventInput = z.infer<typeof createEventSchema>;
+
 export const registerEventSchema = z.object({
   eventId: z.string().trim().min(1, "Event ID is required"),
   userId: z.string().trim().min(1, "User ID is required").optional(),

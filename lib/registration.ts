@@ -1,4 +1,4 @@
-import { Prisma, RegistrationStatus } from "@prisma/client";
+import { Prisma, RegistrationStatus, EventStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export const DUPLICATE_REGISTRATION_ERROR = "Already registered for this event";
@@ -23,8 +23,10 @@ export interface RegisterResultRegistration {
   };
   event?: {
     id: string;
-    title: string;
+    name: string;
+    title?: string;
     date: Date;
+    status: EventStatus | string;
     isCancelled: boolean;
   };
 }
@@ -106,7 +108,7 @@ export async function registerForEvent(
   // 2. Validate Event
   const event = await db.event.findUnique({
     where: { id: eventId },
-    select: { id: true, title: true, date: true, isCancelled: true },
+    select: { id: true, name: true, date: true, status: true },
   });
 
   if (!event) {
@@ -117,7 +119,12 @@ export async function registerForEvent(
     };
   }
 
-  if (event.isCancelled) {
+  const isCancelled =
+    event.status === EventStatus.CANCELLED ||
+    event.status === "CANCELLED" ||
+    (event as any).isCancelled === true;
+
+  if (isCancelled) {
     return {
       success: false,
       statusCode: 400,
@@ -136,7 +143,7 @@ export async function registerForEvent(
   });
 
   if (existing) {
-    if (existing.status !== RegistrationStatus.CANCELLED) {
+    if (existing.status !== RegistrationStatus.CANCELLED && existing.status !== "CANCELLED") {
       return {
         success: false,
         statusCode: 409,
@@ -154,9 +161,15 @@ export async function registerForEvent(
         },
         include: {
           user: { select: { id: true, name: true, email: true } },
-          event: { select: { id: true, title: true, date: true, isCancelled: true } },
+          event: { select: { id: true, name: true, date: true, status: true } },
         },
       });
+
+      const eventName = updated.event?.name ?? (updated.event as any)?.title ?? "";
+      const eventCancelled =
+        updated.event?.status === EventStatus.CANCELLED ||
+        updated.event?.status === "CANCELLED" ||
+        (updated.event as any)?.isCancelled === true;
 
       return {
         success: true,
@@ -170,7 +183,16 @@ export async function registerForEvent(
           timestamp: updated.createdAt,
           createdAt: updated.createdAt,
           user: updated.user,
-          event: updated.event,
+          event: updated.event
+            ? {
+                id: updated.event.id,
+                name: eventName,
+                title: eventName,
+                date: updated.event.date,
+                status: updated.event.status,
+                isCancelled: eventCancelled,
+              }
+            : undefined,
         },
       };
     } catch (err: any) {
@@ -195,9 +217,15 @@ export async function registerForEvent(
       },
       include: {
         user: { select: { id: true, name: true, email: true } },
-        event: { select: { id: true, title: true, date: true, isCancelled: true } },
+        event: { select: { id: true, name: true, date: true, status: true } },
       },
     });
+
+    const eventName = registration.event?.name ?? (registration.event as any)?.title ?? "";
+    const eventCancelled =
+      registration.event?.status === EventStatus.CANCELLED ||
+      registration.event?.status === "CANCELLED" ||
+      (registration.event as any)?.isCancelled === true;
 
     return {
       success: true,
@@ -211,7 +239,16 @@ export async function registerForEvent(
         timestamp: registration.createdAt,
         createdAt: registration.createdAt,
         user: registration.user,
-        event: registration.event,
+        event: registration.event
+          ? {
+              id: registration.event.id,
+              name: eventName,
+              title: eventName,
+              date: registration.event.date,
+              status: registration.event.status,
+              isCancelled: eventCancelled,
+            }
+          : undefined,
       },
     };
   } catch (err: any) {
@@ -248,13 +285,19 @@ export async function checkUserRegistration(
       },
     },
     include: {
-      event: { select: { id: true, title: true, date: true, isCancelled: true } },
+      event: { select: { id: true, name: true, date: true, status: true } },
     },
   });
 
-  if (!reg || reg.status === RegistrationStatus.CANCELLED) {
+  if (!reg || reg.status === RegistrationStatus.CANCELLED || reg.status === "CANCELLED") {
     return { registered: false, registration: null };
   }
+
+  const eventName = reg.event?.name ?? (reg.event as any)?.title ?? "";
+  const eventCancelled =
+    reg.event?.status === EventStatus.CANCELLED ||
+    reg.event?.status === "CANCELLED" ||
+    (reg.event as any)?.isCancelled === true;
 
   return {
     registered: true,
@@ -265,7 +308,16 @@ export async function checkUserRegistration(
       status: reg.status === RegistrationStatus.CONFIRMED ? "confirmed" : reg.status.toLowerCase(),
       timestamp: reg.createdAt,
       createdAt: reg.createdAt,
-      event: reg.event,
+      event: reg.event
+        ? {
+            id: reg.event.id,
+            name: eventName,
+            title: eventName,
+            date: reg.event.date,
+            status: reg.event.status,
+            isCancelled: eventCancelled,
+          }
+        : undefined,
     },
   };
 }
@@ -284,21 +336,38 @@ export async function listRegistrations(
   const registrations = await db.registration.findMany({
     where,
     include: {
-      event: { select: { id: true, title: true, date: true, isCancelled: true } },
+      event: { select: { id: true, name: true, date: true, status: true } },
       user: { select: { id: true, name: true, email: true } },
     },
     orderBy: { createdAt: "desc" },
   });
 
-  return registrations.map((r: any) => ({
-    id: r.id,
-    userId: r.userId,
-    eventId: r.eventId,
-    status: typeof r.status === "string" ? r.status.toLowerCase() : String(r.status).toLowerCase(),
-    rawStatus: r.status,
-    timestamp: r.createdAt,
-    createdAt: r.createdAt,
-    event: r.event,
-    user: r.user,
-  }));
+  return registrations.map((r: any) => {
+    const eventName = r.event?.name ?? r.event?.title ?? "";
+    const eventCancelled =
+      r.event?.status === EventStatus.CANCELLED ||
+      r.event?.status === "CANCELLED" ||
+      r.event?.isCancelled === true;
+
+    return {
+      id: r.id,
+      userId: r.userId,
+      eventId: r.eventId,
+      status: typeof r.status === "string" ? r.status.toLowerCase() : String(r.status).toLowerCase(),
+      rawStatus: r.status,
+      timestamp: r.createdAt,
+      createdAt: r.createdAt,
+      event: r.event
+        ? {
+            id: r.event.id,
+            name: eventName,
+            title: eventName,
+            date: r.event.date,
+            status: r.event.status,
+            isCancelled: eventCancelled,
+          }
+        : undefined,
+      user: r.user,
+    };
+  });
 }

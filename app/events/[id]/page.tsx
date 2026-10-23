@@ -4,13 +4,14 @@ import { prisma } from "@/lib/prisma";
 import { Brand } from "@/app/components/AuthShell";
 import { CalendarIcon, SparkIcon, TicketIcon } from "@/app/components/icons";
 import { RegisterButton } from "./RegisterButton";
+import { EventStatus } from "@prisma/client";
 
 interface EventPageProps {
   params: { id: string };
 }
 
 export default async function EventPage({ params }: EventPageProps) {
-  let event = null;
+  let event: any = null;
 
   try {
     event = await prisma.event.findUnique({
@@ -25,15 +26,15 @@ export default async function EventPage({ params }: EventPageProps) {
     if (params.id === "demo" || params.id === "tech-fest") {
       event = {
         id: params.id,
-        title: "Tech Fest 2026",
+        name: "Tech Fest 2026",
         description: "Join us for the premier tech symposium with workshops, hackathons, and keynote speakers.",
         date: new Date("2026-11-15T10:00:00Z"),
         time: "10:00 AM - 5:00 PM",
         venue: "Main Auditorium",
         category: "Tech",
         capacity: 100,
-        isCancelled: false,
-        organizerId: null,
+        status: EventStatus.ACTIVE,
+        organizerId: "organizer-demo-id",
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -41,6 +42,13 @@ export default async function EventPage({ params }: EventPageProps) {
       notFound();
     }
   }
+
+  const isCancelled =
+    event.status === EventStatus.CANCELLED ||
+    event.status === "CANCELLED" ||
+    event.isCancelled === true;
+
+  const eventName = event.name || event.title || "Untitled Event";
 
   const dateFormatted = new Intl.DateTimeFormat("en-US", {
     dateStyle: "full",
@@ -53,6 +61,9 @@ export default async function EventPage({ params }: EventPageProps) {
         <nav className="nav-links">
           <Link href="/" className="btn" style={{ background: "transparent" }}>
             Home
+          </Link>
+          <Link href="/events" className="btn" style={{ background: "transparent" }}>
+            Browse Events
           </Link>
         </nav>
       </header>
@@ -86,11 +97,11 @@ export default async function EventPage({ params }: EventPageProps) {
                 </span>
               )}
               <h1 style={{ fontSize: "2rem", marginTop: "0.75rem", marginBottom: "0.5rem" }}>
-                {event.title}
+                {eventName}
               </h1>
             </div>
 
-            {event.isCancelled ? (
+            {isCancelled ? (
               <span
                 className="badge badge-danger"
                 style={{
@@ -160,7 +171,7 @@ export default async function EventPage({ params }: EventPageProps) {
             </div>
           </div>
 
-          <RegisterButton eventId={event.id} isCancelled={event.isCancelled} />
+          <RegisterButton eventId={event.id} isCancelled={isCancelled} />
         </article>
       </main>
     </div>

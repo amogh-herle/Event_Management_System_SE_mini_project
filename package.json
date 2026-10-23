@@ -9,13 +9,15 @@
     "lint": "next lint",
     "test": "tsx --test tests/**/*.test.ts",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "test:fr004a": "ts-node -O \"{\\\"module\\\":\\\"commonjs\\\"}\" -r tsconfig-paths/register scripts/test_fr004a.ts"
   },
   "dependencies": {
     "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
     "@prisma/client": "^5.20.0",
     "bcryptjs": "^2.4.3",
     "next": "14.2.35",
+    "nodemailer": "^10.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zod": "^3.23.8"
@@ -24,9 +26,12 @@
     "@next/swc-win32-x64-msvc": "^14.2.33",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.14.9",
+    "@types/nodemailer": "^8.0.2",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "prisma": "^5.20.0",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
     "tsx": "^4.23.15",
     "typescript": "^5.5.3"
   }
