@@ -108,6 +108,13 @@ function createMockDb() {
         }
         return null;
       },
+
+      async upsert({ where, create }: any) {
+        const existing = users.get(where.id);
+        if (existing) return existing;
+        users.set(where.id, { ...create, suspended: false });
+        return users.get(where.id);
+      },
     },
 
     event: {

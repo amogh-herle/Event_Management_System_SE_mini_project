@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { Role } from "@prisma/client";
 import { registerEventSchema } from "@/lib/validation";
 import { registerForEvent, listRegistrations, AUTH_REQUIRED_ERROR } from "@/lib/registration";
-import { getAuthUserFromRequest } from "@/lib/auth";
+import { getAuthUserFromRequest, ensureDemoUserRow } from "@/lib/auth";
 
 export async function POST(request: Request) {
   let body: unknown;
@@ -27,6 +27,8 @@ export async function POST(request: Request) {
   if (!sessionUser) {
     return NextResponse.json({ error: AUTH_REQUIRED_ERROR }, { status: 401 });
   }
+
+  await ensureDemoUserRow(sessionUser);
 
   const { eventId } = parsed.data;
   const result = await registerForEvent({ eventId, userId: sessionUser.id });
