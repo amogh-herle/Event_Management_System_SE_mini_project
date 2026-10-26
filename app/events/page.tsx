@@ -51,6 +51,17 @@ export default function EventsDirectoryPage() {
       .then((data) => {
         if (data.events && Array.isArray(data.events)) {
           setEvents(data.events);
+          // Seed from the server's own answer rather than assuming nothing
+          // is registered — the server knows the real state (and for a
+          // fresh fetch tied to the current role, it's the right identity
+          // too, so a demo role switch can't leak a stale "Registered").
+          setRegisteredIds(
+            new Set(
+              data.events
+                .filter((e: StoredEvent) => e.registered)
+                .map((e: StoredEvent) => e.id)
+            )
+          );
         }
       })
       .catch(() => {})
@@ -59,9 +70,6 @@ export default function EventsDirectoryPage() {
 
   useEffect(() => {
     loadEvents();
-    // Registration state belongs to a specific identity; switching the demo
-    // role mid-session must not leak "Registered" across simulated users.
-    setRegisteredIds(new Set());
     setRegisterErrors({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, role]);
@@ -114,11 +122,14 @@ export default function EventsDirectoryPage() {
     try {
       const res = await fetch(`/api/events/${event.id}/register`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-user-role": role },
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        if (res.status === 409 && data.error === "Already registered for this event") {
+        // 409 from this endpoint only ever means "already registered" —
+        // matching on status alone avoids drifting out of sync with the
+        // server's exact error wording.
+        if (res.status === 409) {
           setRegisteredIds((prev) => new Set(prev).add(event.id));
           return;
         }
@@ -282,7 +293,20 @@ export default function EventsDirectoryPage() {
                   </div>
                   <div className="meta-row">
                     <UsersIcon size={15} />
-                    <span>Capacity: <strong>{event.capacity} seats</strong></span>
+                    <span>
+                      Capacity: <strong>{event.capacity} seats</strong>
+                      {event.remainingSeats !== undefined && (
+                        <>
+                          {" "}
+                          —{" "}
+                          {event.isFull ? (
+                            <strong style={{ color: "var(--danger)" }}>Full</strong>
+                          ) : (
+                            <strong>{event.remainingSeats} left</strong>
+                          )}
+                        </>
+                      )}
+                    </span>
                   </div>
                 </div>
 
@@ -301,6 +325,14 @@ export default function EventsDirectoryPage() {
                           style={{ background: "var(--success-soft)", color: "var(--success)" }}
                         >
                           <CheckIcon size={14} /> Registered
+                        </span>
+                      ) : event.isFull ? (
+                        <span
+                          className="btn btn-sm"
+                          style={{ opacity: 0.6, cursor: "not-allowed" }}
+                          aria-disabled="true"
+                        >
+                          Event Full
                         </span>
                       ) : (
                         <button
