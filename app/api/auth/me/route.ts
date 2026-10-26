@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { readSessionCookie, verifySessionValue } from "@/lib/session";
+import { getRealSessionUser } from "@/lib/auth";
 
 /**
  * Returns the real logged-in user (FR-002a session), or `{ user: null }` if
@@ -12,22 +11,6 @@ import { readSessionCookie, verifySessionValue } from "@/lib/session";
  * can't distinguish.
  */
 export async function GET(request: Request) {
-  const sessionValue = readSessionCookie(request);
-  if (!sessionValue) {
-    return NextResponse.json({ user: null });
-  }
-
-  const userId = verifySessionValue(sessionValue);
-  if (!userId) {
-    return NextResponse.json({ user: null });
-  }
-
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user || user.suspended) {
-    return NextResponse.json({ user: null });
-  }
-
-  return NextResponse.json({
-    user: { id: user.id, name: user.name, email: user.email, role: user.role },
-  });
+  const user = await getRealSessionUser(request);
+  return NextResponse.json({ user });
 }

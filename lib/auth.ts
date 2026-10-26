@@ -99,6 +99,27 @@ export async function getAuthUserFromRequest(request?: Request): Promise<AuthUse
 }
 
 /**
+ * Resolves a real logged-in account only — unlike getAuthUserFromRequest,
+ * never falls back to the demo x-user-role claim. Used wherever the caller
+ * needs to tell "a real account is logged in" apart from "nobody's logged
+ * in, the demo RoleSwitcher cookie just happens to say Organizer" (e.g.
+ * whether to show a Log out button, or a real account's fixed role instead
+ * of a switchable demo one).
+ */
+export async function getRealSessionUser(request?: Request): Promise<AuthUser | null> {
+  const sessionValue = readCookie(request, "session");
+  if (!sessionValue) return null;
+
+  const userId = verifySessionValue(sessionValue);
+  if (!userId) return null;
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user || user.suspended) return null;
+
+  return { id: user.id, name: user.name, email: user.email, role: user.role };
+}
+
+/**
  * Ensures a User row exists for the given identity, creating it (with a
  * placeholder password hash) on first use. Needed because the demo
  * x-user-role claim resolves to a fixed AuthUser object (DEMO_ORGANIZER /
