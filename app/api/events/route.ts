@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createEventSchema } from "@/lib/validation";
-import { getAuthUserFromRequest, requireOrganizer } from "@/lib/auth";
+import { getAuthUserFromRequest, requireOrganizer, ensureDemoUserRow } from "@/lib/auth";
 import { StoredEvent, inMemoryEvents } from "@/app/api/events/store";
 
 export type { StoredEvent };
@@ -46,22 +46,7 @@ export async function POST(request: Request) {
 
   // 4. Persist event
   try {
-    // Ensure the demo organizer user row exists. Only set role/fields on
-    // first creation — never overwrite on update, since auth.user.role is
-    // client-controlled (demo auth) and every POST would otherwise silently
-    // reset whatever role is actually stored for this id.
-    await prisma.user.upsert({
-      where: { id: auth.user.id },
-      update: {},
-      create: {
-        id: auth.user.id,
-        name: auth.user.name,
-        email: auth.user.email,
-        passwordHash: "demo-password-hash",
-        role: auth.user.role,
-        verified: true,
-      },
-    });
+    await ensureDemoUserRow(auth.user);
 
     // Optional category relation — losing this link isn't fatal to event
     // creation, but only swallow the specific "table not migrated yet"

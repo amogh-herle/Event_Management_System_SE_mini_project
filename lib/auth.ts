@@ -98,6 +98,32 @@ export async function getAuthUserFromRequest(request?: Request): Promise<AuthUse
   return null;
 }
 
+/**
+ * Ensures a User row exists for the given identity, creating it (with a
+ * placeholder password hash) on first use. Needed because the demo
+ * x-user-role claim resolves to a fixed AuthUser object (DEMO_ORGANIZER /
+ * DEMO_PARTICIPANT / DEMO_ADMIN) that doesn't automatically have a backing
+ * database row — any write that foreign-keys off userId (creating an
+ * event, registering for one) needs that row to exist first. Only sets
+ * role/fields on first creation; a real logged-in user's row is left
+ * untouched (`update: {}`), since role here is otherwise client-controlled
+ * for the demo case and would silently stomp real data on every call.
+ */
+export async function ensureDemoUserRow(user: AuthUser): Promise<void> {
+  await prisma.user.upsert({
+    where: { id: user.id },
+    update: {},
+    create: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      passwordHash: "demo-password-hash",
+      role: user.role,
+      verified: true,
+    },
+  });
+}
+
 type AuthResult =
   | { authorized: true; user: AuthUser }
   | { authorized: false; user: AuthUser | null; error: string; status: number };
