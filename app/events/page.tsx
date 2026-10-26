@@ -30,7 +30,7 @@ export default function EventsDirectoryPage() {
   const [events, setEvents] = useState<StoredEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useSessionRole();
-  const [tab, setTab] = useState<"organizer" | "all">("organizer");
+  const [tab, setTab] = useState<"organizer" | "all">("all");
   const [search, setSearch] = useState("");
   const [confirmModal, setConfirmModal] = useState<ConfirmModal>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -67,6 +67,15 @@ export default function EventsDirectoryPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }
+
+  // Participants have no events to create, so "My Created Events" isn't a
+  // meaningful tab for them — bounce back to the directory if the role
+  // changes out from under an open "organizer" tab (e.g. demo role switch).
+  useEffect(() => {
+    if (role !== "ORGANIZER" && tab === "organizer") {
+      setTab("all");
+    }
+  }, [role, tab]);
 
   useEffect(() => {
     loadEvents();
@@ -206,15 +215,17 @@ export default function EventsDirectoryPage() {
         {/* Tab & Search Filter Bar */}
         <div className="directory-toolbar">
           <div className="tabs" role="tablist" aria-label="Event views">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "organizer"}
-              onClick={() => setTab("organizer")}
-              className={`tab-btn ${tab === "organizer" ? "active" : ""}`}
-            >
-              My Created Events
-            </button>
+            {role === "ORGANIZER" && (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === "organizer"}
+                onClick={() => setTab("organizer")}
+                className={`tab-btn ${tab === "organizer" ? "active" : ""}`}
+              >
+                My Created Events
+              </button>
+            )}
             <button
               type="button"
               role="tab"

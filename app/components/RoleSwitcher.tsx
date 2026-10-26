@@ -2,6 +2,7 @@
 
 import { ShieldIcon, UserIcon } from "./icons";
 import { useSessionRole, type RoleType } from "@/lib/useSessionRole";
+import { LogoutButton } from "./LogoutButton";
 
 export type { RoleType };
 
@@ -33,6 +34,7 @@ export function RoleSwitcher({ onRoleChange }: { onRoleChange?: (role: RoleType)
             Signed in as: <strong>{role}</strong>
           </span>
         </div>
+        <LogoutButton className="btn btn-sm btn-ghost" />
       </div>
     );
   }
