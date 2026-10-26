@@ -15,6 +15,7 @@ import {
 
 type Field = "name" | "email" | "password";
 type Errors = Partial<Record<Field, string>>;
+type SignupRole = "PARTICIPANT" | "ORGANIZER";
 
 // Mirrors lib/validation.ts (server stays the source of truth).
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -43,6 +44,7 @@ const STRENGTH_LABEL = ["", "Weak", "Fair", "Good", "Strong"];
 export default function SignupPage() {
   const router = useRouter();
   const [values, setValues] = useState({ name: "", email: "", password: "" });
+  const [role, setRole] = useState<SignupRole>("PARTICIPANT");
   const [touched, setTouched] = useState<Partial<Record<Field, boolean>>>({});
   const [serverErrors, setServerErrors] = useState<Errors>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -87,7 +89,7 @@ export default function SignupPage() {
       const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(values),
+        body: JSON.stringify({ ...values, role }),
       });
       const data = await res.json().catch(() => ({}));
 
@@ -136,6 +138,36 @@ export default function SignupPage() {
             <span>{formError}</span>
           </div>
         )}
+
+        {/* Role */}
+        <div className="field">
+          <label className="field-label">I'm signing up as</label>
+          <div className="tabs" role="radiogroup" aria-label="Account role" style={{ marginTop: "0.25rem" }}>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={role === "PARTICIPANT"}
+              onClick={() => setRole("PARTICIPANT")}
+              className={`tab-btn ${role === "PARTICIPANT" ? "active" : ""}`}
+            >
+              Participant
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={role === "ORGANIZER"}
+              onClick={() => setRole("ORGANIZER")}
+              className={`tab-btn ${role === "ORGANIZER" ? "active" : ""}`}
+            >
+              Organizer
+            </button>
+          </div>
+          <span className="sr-only" aria-live="polite">
+            {role === "ORGANIZER"
+              ? "Signing up as an Organizer — you'll be able to create and manage events."
+              : "Signing up as a Participant — you'll be able to browse and register for events."}
+          </span>
+        </div>
 
         {/* Name */}
         <div className="field">
