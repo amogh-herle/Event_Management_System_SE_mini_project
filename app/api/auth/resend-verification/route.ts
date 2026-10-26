@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { createVerificationToken } from "@/lib/tokens";
 import { sendMail } from "@/lib/mailer";
 import { verificationEmail } from "@/lib/emailTemplates";
+import { getPublicOrigin } from "@/lib/url";
 
 const bodySchema = z.object({ email: z.string().trim().toLowerCase().email() });
 
@@ -31,7 +32,7 @@ export async function POST(request: Request) {
   if (user && !user.verified) {
     try {
       const rawToken = await createVerificationToken(user.id);
-      const verifyUrl = `${new URL(request.url).origin}/verify?token=${rawToken}`;
+      const verifyUrl = `${getPublicOrigin(request)}/verify?token=${rawToken}`;
       const { subject, html } = verificationEmail(user.name, verifyUrl);
       await sendMail(user.email, subject, html);
     } catch (mailErr) {
