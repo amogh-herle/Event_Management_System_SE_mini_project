@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
+import { Prisma, RegistrationStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createEventSchema } from "@/lib/validation";
 import { getAuthUserFromRequest, requireOrganizer, ensureDemoUserRow } from "@/lib/auth";
@@ -171,21 +171,52 @@ export async function GET(request: Request) {
       orderBy: { createdAt: "desc" },
     });
 
-    const mapped: StoredEvent[] = events.map((e) => ({
-      id: e.id,
-      name: e.name,
-      description: e.description,
-      date: e.date.toISOString().slice(0, 10),
-      time: e.time,
-      venue: e.venue,
-      category: e.category,
-      capacity: e.capacity,
-      status: e.status,
-      organizerId: e.organizerId,
-      organizerName: e.organizer.name,
-      createdAt: e.createdAt.toISOString(),
-      updatedAt: e.updatedAt.toISOString(),
-    }));
+    // Batched (not per-event) so listing N events costs 1-2 extra queries
+    // total, not N — confirmed-seat counts for the capacity display (FR-008)
+    // and, when the caller is authenticated, which of these events they're
+    // already registered for (so the directory doesn't always start every
+    // card at "Register" regardless of real status).
+    const eventIds = events.map((e) => e.id);
+    const confirmedCounts = eventIds.length
+      ? await prisma.registration.groupBy({
+          by: ["eventId"],
+          where: { eventId: { in: eventIds }, status: RegistrationStatus.CONFIRMED },
+          _count: { _all: true },
+        })
+      : [];
+    const confirmedCountByEvent = new Map(confirmedCounts.map((c) => [c.eventId, c._count._all]));
+
+    let registeredEventIds: Set<string> | null = null;
+    if (auth && eventIds.length) {
+      const myRegs = await prisma.registration.findMany({
+        where: { userId: auth.id, eventId: { in: eventIds }, status: RegistrationStatus.CONFIRMED },
+        select: { eventId: true },
+      });
+      registeredEventIds = new Set(myRegs.map((r) => r.eventId));
+    }
+
+    const mapped: StoredEvent[] = events.map((e) => {
+      const confirmedCount = confirmedCountByEvent.get(e.id) ?? 0;
+      const remainingSeats = Math.max(0, e.capacity - confirmedCount);
+      return {
+        id: e.id,
+        name: e.name,
+        description: e.description,
+        date: e.date.toISOString().slice(0, 10),
+        time: e.time,
+        venue: e.venue,
+        category: e.category,
+        capacity: e.capacity,
+        status: e.status,
+        organizerId: e.organizerId,
+        organizerName: e.organizer.name,
+        createdAt: e.createdAt.toISOString(),
+        updatedAt: e.updatedAt.toISOString(),
+        remainingSeats,
+        isFull: remainingSeats <= 0,
+        registered: registeredEventIds ? registeredEventIds.has(e.id) : undefined,
+      };
+    });
 
     return NextResponse.json({ events: mapped });
   } catch (err) {

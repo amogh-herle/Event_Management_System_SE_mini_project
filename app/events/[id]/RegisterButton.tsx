@@ -95,7 +95,10 @@ export function RegisterButton({
       if (!res.ok) {
         setError(data.error || "Registration failed");
         setStep("idle");
-        if (res.status === 409 && data.error === "Already registered for this event") {
+        // 409 from this endpoint only ever means "already registered" —
+        // matching on status alone avoids drifting out of sync with the
+        // server's exact error wording.
+        if (res.status === 409) {
           setIsRegistered(true);
           if (data.registration) {
             setRegistrationDetails({
