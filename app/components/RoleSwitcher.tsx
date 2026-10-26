@@ -6,7 +6,7 @@ import { useSessionRole, type RoleType } from "@/lib/useSessionRole";
 export type { RoleType };
 
 export function RoleSwitcher({ onRoleChange }: { onRoleChange?: (role: RoleType) => void }) {
-  const [role, setRole] = useSessionRole();
+  const [role, setRole, isRealAccount] = useSessionRole();
 
   function switchRole(newRole: RoleType) {
     setRole(newRole);
@@ -16,6 +16,25 @@ export function RoleSwitcher({ onRoleChange }: { onRoleChange?: (role: RoleType)
     } else {
       window.location.reload();
     }
+  }
+
+  // A real logged-in account's role is fixed in the database — the demo
+  // cookie this switches has no effect once a real session is present
+  // (the session always wins), so offering the switch buttons here would
+  // just be misleading. Show the account's real role instead.
+  if (isRealAccount) {
+    return (
+      <div className="role-switcher-container" role="region" aria-label="Signed in">
+        <div className="role-badge" title="Your account's role">
+          <span className="role-badge-icon" aria-hidden="true">
+            {role === "ORGANIZER" ? <ShieldIcon size={14} /> : <UserIcon size={14} />}
+          </span>
+          <span className="role-badge-label">
+            Signed in as: <strong>{role}</strong>
+          </span>
+        </div>
+      </div>
+    );
   }
 
   return (
