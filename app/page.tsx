@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { Brand } from "./components/AuthShell";
+import { LogoutButton } from "./components/LogoutButton";
+import { getRealSessionUser } from "@/lib/auth";
 import {
   ArrowRightIcon,
   CalendarIcon,
@@ -33,7 +35,9 @@ const ROLES = [
   },
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
+  const sessionUser = await getRealSessionUser();
+
   return (
     <div className="landing">
       <header className="nav">
@@ -45,12 +49,23 @@ export default function HomePage() {
           <Link href="/events/create" className="btn btn-ghost">
             <PlusIcon size={16} /> Create Event
           </Link>
-          <Link href="/login" className="btn btn-ghost">
-            Log in
-          </Link>
-          <Link href="/signup" className="btn btn-primary">
-            Sign up
-          </Link>
+          {sessionUser ? (
+            <>
+              <span style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>
+                Signed in as <strong>{sessionUser.name}</strong>
+              </span>
+              <LogoutButton />
+            </>
+          ) : (
+            <>
+              <Link href="/login" className="btn btn-ghost">
+                Log in
+              </Link>
+              <Link href="/signup" className="btn btn-primary">
+                Sign up
+              </Link>
+            </>
+          )}
         </nav>
       </header>
 
