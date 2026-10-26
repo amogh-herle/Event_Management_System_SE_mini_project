@@ -18,6 +18,12 @@ export interface StoredEvent {
   organizerName: string;
   createdAt: string;
   updatedAt: string;
+  // Only populated by the real DB path (FR-008 capacity, FR-007
+  // registration) — undefined on the in-memory fallback, where there's no
+  // Registration table to count against.
+  remainingSeats?: number;
+  isFull?: boolean;
+  registered?: boolean;
 }
 
 export const inMemoryEvents: StoredEvent[] = [
