@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { name, email, password } = parsed.data;
+  const { name, email, password, role } = parsed.data;
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
 
   try {
     const user = await prisma.user.create({
-      data: { name, email, passwordHash },
+      data: { name, email, passwordHash, role },
       // verified defaults to false — activated via the link sent below
     });
 
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(
-      { id: user.id, name: user.name, email: user.email, verified: user.verified },
+      { id: user.id, name: user.name, email: user.email, role: user.role, verified: user.verified },
       { status: 201 }
     );
   } catch (err) {

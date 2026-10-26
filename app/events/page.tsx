@@ -8,9 +8,11 @@ import { useSessionRole } from "@/lib/useSessionRole";
 import {
   AlertIcon,
   CalendarIcon,
+  CheckIcon,
   ClockIcon,
   MapPinIcon,
   PlusIcon,
+  SparkIcon,
   TagIcon,
   TicketIcon,
   TrashIcon,
@@ -33,6 +35,9 @@ export default function EventsDirectoryPage() {
   const [confirmModal, setConfirmModal] = useState<ConfirmModal>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [registeringId, setRegisteringId] = useState<string | null>(null);
+  const [registeredIds, setRegisteredIds] = useState<Set<string>>(new Set());
+  const [registerErrors, setRegisterErrors] = useState<Record<string, string>>({});
 
   function loadEvents() {
     setLoading(true);
@@ -95,6 +100,32 @@ export default function EventsDirectoryPage() {
       setActionError("An error occurred. Please try again.");
     } finally {
       setActionLoading(false);
+    }
+  }
+
+  // ── Register action (quick-register straight from the directory card) ──────
+  async function handleRegister(event: StoredEvent) {
+    setRegisteringId(event.id);
+    setRegisterErrors((prev) => ({ ...prev, [event.id]: "" }));
+    try {
+      const res = await fetch(`/api/events/${event.id}/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 409 && data.error === "Already registered for this event") {
+          setRegisteredIds((prev) => new Set(prev).add(event.id));
+          return;
+        }
+        setRegisterErrors((prev) => ({ ...prev, [event.id]: data.error || "Registration failed" }));
+        return;
+      }
+      setRegisteredIds((prev) => new Set(prev).add(event.id));
+    } catch {
+      setRegisterErrors((prev) => ({ ...prev, [event.id]: "Network error. Please try again." }));
+    } finally {
+      setRegisteringId(null);
     }
   }
 
@@ -255,6 +286,41 @@ export default function EventsDirectoryPage() {
                   <span className="organizer-tag">
                     Organizer: <strong>{event.organizerName}</strong>
                   </span>
+
+                  {/* FR-007: quick-register straight from the directory card */}
+                  {tab === "all" && event.status === "ACTIVE" && (
+                    <div className="card-actions">
+                      {registeredIds.has(event.id) ? (
+                        <span
+                          className="btn btn-sm"
+                          aria-live="polite"
+                          style={{ background: "var(--success-soft)", color: "var(--success)" }}
+                        >
+                          <CheckIcon size={14} /> Registered
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-primary"
+                          disabled={registeringId === event.id}
+                          onClick={() => handleRegister(event)}
+                          aria-label={`Register for event: ${event.name}`}
+                        >
+                          {registeringId === event.id ? (
+                            <><span className="spinner" /> Registering...</>
+                          ) : (
+                            <><SparkIcon size={14} /> Register</>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {registerErrors[event.id] && (
+                    <p className="field-error" role="alert" style={{ width: "100%", marginTop: "0.5rem" }}>
+                      <AlertIcon size={14} />
+                      <span>{registerErrors[event.id]}</span>
+                    </p>
+                  )}
 
                   {/* FR-005a: Cancel / Delete actions — only for owning organizer */}
                   {role === "ORGANIZER" && tab === "organizer" && (

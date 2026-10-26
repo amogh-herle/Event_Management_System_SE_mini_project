@@ -1,4 +1,9 @@
 import { z } from "zod";
+import { Role } from "@prisma/client";
+
+// Admin is intentionally excluded — it's never self-assignable at signup,
+// only granted by an existing admin (FR-003c, not yet built).
+export const SIGNUP_ROLES = [Role.PARTICIPANT, Role.ORGANIZER] as const;
 
 export const signupSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(100, "Name is too long"),
@@ -14,6 +19,7 @@ export const signupSchema = z.object({
     .string()
     .min(8, "Password must be at least 8 characters")
     .max(72, "Password must be at most 72 characters"),
+  role: z.enum(SIGNUP_ROLES).default(Role.PARTICIPANT),
 });
 
 export type SignupInput = z.infer<typeof signupSchema>;
