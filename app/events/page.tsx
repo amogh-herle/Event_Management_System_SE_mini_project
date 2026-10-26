@@ -59,6 +59,10 @@ export default function EventsDirectoryPage() {
 
   useEffect(() => {
     loadEvents();
+    // Registration state belongs to a specific identity; switching the demo
+    // role mid-session must not leak "Registered" across simulated users.
+    setRegisteredIds(new Set());
+    setRegisterErrors({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, role]);
 
