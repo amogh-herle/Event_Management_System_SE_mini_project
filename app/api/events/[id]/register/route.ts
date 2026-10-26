@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { registerForEvent, checkUserRegistration, AUTH_REQUIRED_ERROR } from "@/lib/registration";
-import { getAuthUserFromRequest } from "@/lib/auth";
+import { getAuthUserFromRequest, ensureDemoUserRow } from "@/lib/auth";
 
 export async function POST(
   request: Request,
@@ -22,6 +22,8 @@ export async function POST(
   if (!sessionUser) {
     return NextResponse.json({ error: AUTH_REQUIRED_ERROR }, { status: 401 });
   }
+
+  await ensureDemoUserRow(sessionUser);
 
   const result = await registerForEvent({ eventId, userId: sessionUser.id });
 
