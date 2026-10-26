@@ -16,6 +16,24 @@ export function verificationEmail(name: string, verifyUrl: string) {
   return { subject, html };
 }
 
+export function passwordResetEmail(name: string, resetUrl: string) {
+  const subject = "Reset your Event Management System password";
+  const html = `
+    <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+      <h2>Hi ${escapeHtml(name)},</h2>
+      <p>We received a request to reset your password. Click the button below to choose a new one.</p>
+      <p style="margin: 24px 0;">
+        <a href="${resetUrl}" style="background:#4b3fd6;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;">
+          Reset my password
+        </a>
+      </p>
+      <p>Or paste this link into your browser:<br>${resetUrl}</p>
+      <p style="color:#666;font-size:13px;">This link expires in 1 hour. If you didn't request a password reset, you can safely ignore this email — your password won't change.</p>
+    </div>
+  `;
+  return { subject, html };
+}
+
 function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string)

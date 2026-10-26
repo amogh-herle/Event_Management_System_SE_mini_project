@@ -6,6 +6,7 @@ import { signupSchema } from "@/lib/validation";
 import { createVerificationToken } from "@/lib/tokens";
 import { sendMail } from "@/lib/mailer";
 import { verificationEmail } from "@/lib/emailTemplates";
+import { getPublicOrigin } from "@/lib/url";
 
 const DUPLICATE_EMAIL_ERROR = "An account with this email already exists";
 
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
 
     try {
       const rawToken = await createVerificationToken(user.id);
-      const verifyUrl = `${new URL(request.url).origin}/verify?token=${rawToken}`;
+      const verifyUrl = `${getPublicOrigin(request)}/verify?token=${rawToken}`;
       const { subject, html } = verificationEmail(user.name, verifyUrl);
       await sendMail(user.email, subject, html);
     } catch (mailErr) {
