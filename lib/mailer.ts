@@ -7,6 +7,8 @@ let transporterPromise: Promise<Transporter> | null = null;
  * not the account password). Falls back to a disposable Ethereal test
  * inbox when those aren't set, so the flow is runnable without real
  * credentials — the console logs a preview URL for the sent mail.
+ * In test environment (NODE_ENV=test), uses jsonTransport to avoid
+ * network latency during test runs.
  */
 function getTransporter(): Promise<Transporter> {
   if (transporterPromise) return transporterPromise;
@@ -19,6 +21,12 @@ function getTransporter(): Promise<Transporter> {
           user: process.env.EMAIL_USER,
           pass: process.env.EMAIL_PASS,
         },
+      });
+    }
+
+    if (process.env.NODE_ENV === "test" || !process.env.EMAIL_USER) {
+      return nodemailer.createTransport({
+        jsonTransport: true,
       });
     }
 

@@ -106,10 +106,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ event: formatted }, { status: 201 });
   } catch (dbErr) {
-    // Only degrade to the in-memory store when the database is genuinely
-    // unreachable (connection/init failure) — not for every error. A real
-    // data error (bad constraint, overflow, etc.) must surface as a real
-    // error response, not a fake 201 that silently isn't persisted.
     if (dbErr instanceof Prisma.PrismaClientInitializationError) {
       const fallbackEvent: StoredEvent = {
         id: "evt-" + Math.random().toString(36).substring(2, 9),
@@ -147,10 +143,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
 
-  // "me" (resolved server-side from auth) or no filter (public browse) are
-  // the only supported options. An arbitrary organizer id was previously
-  // accepted here too, letting anyone enumerate any other organizer's full
-  // event list by id with zero authorization.
   try {
     const whereClause: { organizerId?: string; status?: "ACTIVE" } = {};
     if (organizerFilter === "me" && auth) {
@@ -171,11 +163,6 @@ export async function GET(request: Request) {
       orderBy: { createdAt: "desc" },
     });
 
-    // Batched (not per-event) so listing N events costs 1-2 extra queries
-    // total, not N — confirmed-seat counts for the capacity display (FR-008)
-    // and, when the caller is authenticated, which of these events they're
-    // already registered for (so the directory doesn't always start every
-    // card at "Register" regardless of real status).
     const eventIds = events.map((e) => e.id);
     const confirmedCounts = eventIds.length
       ? await prisma.registration.groupBy({
@@ -186,17 +173,37 @@ export async function GET(request: Request) {
       : [];
     const confirmedCountByEvent = new Map(confirmedCounts.map((c) => [c.eventId, c._count._all]));
 
+    const waitlistCounts = eventIds.length
+      ? await prisma.registration.groupBy({
+          by: ["eventId"],
+          where: { eventId: { in: eventIds }, status: RegistrationStatus.WAITLISTED },
+          _count: { _all: true },
+        })
+      : [];
+    const waitlistCountByEvent = new Map(waitlistCounts.map((c) => [c.eventId, c._count._all]));
+
     let registeredEventIds: Set<string> | null = null;
+    let waitlistedEventIds: Set<string> | null = null;
     if (auth && eventIds.length) {
       const myRegs = await prisma.registration.findMany({
-        where: { userId: auth.id, eventId: { in: eventIds }, status: RegistrationStatus.CONFIRMED },
-        select: { eventId: true },
+        where: {
+          userId: auth.id,
+          eventId: { in: eventIds },
+          status: { in: [RegistrationStatus.CONFIRMED, RegistrationStatus.WAITLISTED] },
+        },
+        select: { eventId: true, status: true },
       });
-      registeredEventIds = new Set(myRegs.map((r) => r.eventId));
+      registeredEventIds = new Set(
+        myRegs.filter((r) => r.status === RegistrationStatus.CONFIRMED).map((r) => r.eventId)
+      );
+      waitlistedEventIds = new Set(
+        myRegs.filter((r) => r.status === RegistrationStatus.WAITLISTED).map((r) => r.eventId)
+      );
     }
 
     const mapped: StoredEvent[] = events.map((e) => {
       const confirmedCount = confirmedCountByEvent.get(e.id) ?? 0;
+      const waitlistCount = waitlistCountByEvent.get(e.id) ?? 0;
       const remainingSeats = Math.max(0, e.capacity - confirmedCount);
       return {
         id: e.id,
@@ -215,6 +222,8 @@ export async function GET(request: Request) {
         remainingSeats,
         isFull: remainingSeats <= 0,
         registered: registeredEventIds ? registeredEventIds.has(e.id) : undefined,
+        waitlisted: waitlistedEventIds ? waitlistedEventIds.has(e.id) : undefined,
+        waitlistCount,
       };
     });
 
@@ -225,7 +234,6 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Failed to load events" }, { status: 500 });
     }
 
-    // Database genuinely unreachable — serve the in-memory fallback.
     let list = [...inMemoryEvents];
     if (organizerFilter === "me" && auth) {
       list = list.filter((e) => e.organizerId === auth.id);
