@@ -51,6 +51,12 @@ export const resetPasswordSchema = z.object({
 
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 
+export const updateProfileSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(100, "Name is too long"),
+});
+
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+
 export const createEventSchema = z.object({
   name: z
     .string({ required_error: "Required field missing: name" })
