@@ -172,3 +172,36 @@ export async function requireOrganizer(request?: Request): Promise<AuthResult> {
 
   return { authorized: true, user };
 }
+
+/**
+ * Like requireOrganizer, but for admin-only endpoints that act on OTHER
+ * users' accounts (suspend/delete). Deliberately uses getRealSessionUser,
+ * not getAuthUserFromRequest — the demo x-user-role/event_session_role
+ * claim is a client-set cookie anyone can flip to "ADMIN" with zero
+ * authentication, which is an acceptable stand-in for low-stakes demo data
+ * (events) but not for the ability to suspend or delete a real account. A
+ * real admin session is required here.
+ */
+export async function requireAdmin(request?: Request): Promise<AuthResult> {
+  const user = await getRealSessionUser(request);
+
+  if (!user) {
+    return {
+      authorized: false,
+      user: null,
+      error: "Authentication required",
+      status: 401,
+    };
+  }
+
+  if (user.role !== Role.ADMIN) {
+    return {
+      authorized: false,
+      user,
+      error: "Access denied: Admins only",
+      status: 403,
+    };
+  }
+
+  return { authorized: true, user };
+}
