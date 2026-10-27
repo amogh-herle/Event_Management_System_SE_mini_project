@@ -3,9 +3,15 @@ import assert from "node:assert/strict";
 import { Prisma, RegistrationStatus, EventStatus } from "@prisma/client";
 import {
   registerForEvent,
+  joinWaitlist,
+  cancelRegistration,
+  getWaitlistPosition,
+  getWaitlistCount,
   checkUserRegistration,
   getEventCapacity,
   clearEventLocks,
+  onWaitlistNotification,
+  clearNotificationListeners,
   DUPLICATE_REGISTRATION_ERROR,
   EVENT_CANCELLED_ERROR,
   EVENT_NOT_FOUND_ERROR,
@@ -13,6 +19,9 @@ import {
   USER_SUSPENDED_ERROR,
   AUTH_REQUIRED_ERROR,
   EVENT_FULL_ERROR,
+  ALREADY_WAITLISTED_ERROR,
+  EVENT_NOT_FULL_ERROR,
+  REGISTRATION_NOT_FOUND_ERROR,
 } from "../lib/registration";
 
 /**
@@ -63,12 +72,34 @@ function createMockDb() {
         return null;
       },
 
+      async findFirst({ where, orderBy, include }: any = {}) {
+        let list = Array.from(registrations.values());
+        if (where?.eventId) list = list.filter((r) => r.eventId === where.eventId);
+        if (where?.userId) list = list.filter((r) => r.userId === where.userId);
+        if (where?.status) list = list.filter((r) => r.status === where.status);
+        list.sort((a, b) => {
+          const diff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+          if (diff !== 0) return diff;
+          return String(a.id).localeCompare(String(b.id));
+        });
+        const match = list[0];
+        if (!match) return null;
+        const user = users.get(match.userId);
+        const event = events.get(match.eventId);
+        return {
+          ...match,
+          ...(include?.user ? { user: { id: user.id, name: user.name, email: user.email } } : {}),
+          ...(include?.event ? { event: { id: event.id, name: event.name || event.title, date: event.date, status: event.status || (event.isCancelled ? EventStatus.CANCELLED : EventStatus.ACTIVE), capacity: event.capacity } } : {}),
+        };
+      },
+
       async count({ where }: any = {}) {
         const list = Array.from(registrations.values());
         return list.filter((r) => {
           if (where?.userId && r.userId !== where.userId) return false;
           if (where?.eventId && r.eventId !== where.eventId) return false;
           if (where?.status && r.status !== where.status) return false;
+          if (where?.createdAt?.lte && new Date(r.createdAt).getTime() > new Date(where.createdAt.lte).getTime()) return false;
           return true;
         }).length;
       },
@@ -90,11 +121,11 @@ function createMockDb() {
         const event = events.get(data.eventId);
 
         const record = {
-          id: `reg_cuid_${regIdCounter++}`,
+          id: `reg_cuid_${String(regIdCounter++).padStart(6, "0")}`,
           userId: data.userId,
           eventId: data.eventId,
           status: data.status || RegistrationStatus.CONFIRMED,
-          createdAt: new Date(),
+          createdAt: data.createdAt || new Date(),
           updatedAt: new Date(),
           ...(include?.user ? { user: { id: user.id, name: user.name, email: user.email } } : {}),
           ...(include?.event ? { event: { id: event.id, name: event.name || event.title, date: event.date, status: event.status || (event.isCancelled ? EventStatus.CANCELLED : EventStatus.ACTIVE), capacity: event.capacity } } : {}),
@@ -157,6 +188,28 @@ function seedData(db: ReturnType<typeof createMockDb>) {
     id: "user_priya",
     name: "Priya Nair",
     email: "priya.nair@test.com",
+    role: "PARTICIPANT",
+    verified: true,
+    suspended: false,
+    createdAt: new Date("2026-10-01T00:00:00Z"),
+  });
+
+  // Participant Rahul Verma (from Test Case IT_01 / ST_01)
+  db.users.set("user_rahul", {
+    id: "user_rahul",
+    name: "Rahul Verma",
+    email: "rahul.verma@test.com",
+    role: "PARTICIPANT",
+    verified: true,
+    suspended: false,
+    createdAt: new Date("2026-10-01T00:00:00Z"),
+  });
+
+  // Participant Sneha Patel
+  db.users.set("user_sneha", {
+    id: "user_sneha",
+    name: "Sneha Patel",
+    email: "sneha.patel@test.com",
     role: "PARTICIPANT",
     verified: true,
     suspended: false,
@@ -927,4 +980,387 @@ test("FR-008: getEventCapacity helper returns accurate capacity, confirmedCount,
   assert.equal(fullCap.confirmedCount, 1);
   assert.equal(fullCap.remainingSeats, 0);
   assert.equal(fullCap.isFull, true);
+});
+
+// -----------------------------------------------------------------------------
+// FR-009a Test Suites (Waitlist with auto-promotion on cancellation)
+// -----------------------------------------------------------------------------
+
+test("FR-009a / UT_01: Verify joining a waitlist records the user's position for a full event", async () => {
+  const db = createMockDb();
+  seedFR008Data(db);
+
+  // Pre-condition: event_full_seminar has capacity=1 and 1 confirmed registration (user_amit)
+  const capBefore = await getEventCapacity("event_full_seminar", db);
+  assert.ok(capBefore);
+  assert.equal(capBefore.isFull, true);
+  assert.equal(capBefore.remainingSeats, 0);
+
+  // Action 1: Priya joins waitlist for full seminar
+  const priyaResult = await joinWaitlist(
+    {
+      userId: "user_priya",
+      eventId: "event_full_seminar",
+    },
+    db
+  );
+
+  // Expected 1: Priya is added to the waitlist and shown queue position 1
+  assert.equal(priyaResult.success, true);
+  assert.equal(priyaResult.statusCode, 201);
+  assert.equal(priyaResult.waitlistPosition, 1);
+  assert.equal(priyaResult.registration?.status, "waitlisted");
+  assert.equal(priyaResult.registration?.userId, "user_priya");
+
+  // Action 2: Rahul joins waitlist for the same full seminar
+  const rahulResult = await joinWaitlist(
+    {
+      userId: "user_rahul",
+      eventId: "event_full_seminar",
+    },
+    db
+  );
+
+  // Expected 2: Rahul is added to waitlist at position 2
+  assert.equal(rahulResult.success, true);
+  assert.equal(rahulResult.statusCode, 201);
+  assert.equal(rahulResult.waitlistPosition, 2);
+  assert.equal(rahulResult.registration?.status, "waitlisted");
+
+  // Total waitlist count is 2
+  const waitlistCount = await getWaitlistCount("event_full_seminar", db);
+  assert.equal(waitlistCount, 2);
+
+  // Check registration helper returns accurate position
+  const priyaCheck = await checkUserRegistration("user_priya", "event_full_seminar", db);
+  assert.equal(priyaCheck.registered, true);
+  assert.equal(priyaCheck.isWaitlisted, true);
+  assert.equal(priyaCheck.waitlistPosition, 1);
+
+  const rahulCheck = await checkUserRegistration("user_rahul", "event_full_seminar", db);
+  assert.equal(rahulCheck.registered, true);
+  assert.equal(rahulCheck.isWaitlisted, true);
+  assert.equal(rahulCheck.waitlistPosition, 2);
+});
+
+test("FR-009a / UT_02: Verify a participant can cancel their registration and free a seat", async () => {
+  const db = createMockDb();
+  seedData(db);
+
+  // 1. Amit registers for Tech Fest (capacity: 100)
+  const reg = await registerForEvent({ userId: "user_amit", eventId: "event_tech_fest" }, db);
+  assert.equal(reg.success, true);
+  assert.equal(reg.statusCode, 201);
+
+  const capAfterReg = await getEventCapacity("event_tech_fest", db);
+  assert.equal(capAfterReg?.confirmedCount, 1);
+  assert.equal(capAfterReg?.remainingSeats, 99);
+
+  // 2. Amit cancels registration
+  const cancelResult = await cancelRegistration(
+    {
+      userId: "user_amit",
+      eventId: "event_tech_fest",
+    },
+    db
+  );
+
+  assert.equal(cancelResult.success, true);
+  assert.equal(cancelResult.statusCode, 200);
+  assert.equal(cancelResult.registration?.status, "cancelled");
+  assert.equal(cancelResult.remainingSeats, 100);
+
+  // Seat count increases by 1 back to 100
+  const capAfterCancel = await getEventCapacity("event_tech_fest", db);
+  assert.equal(capAfterCancel?.confirmedCount, 0);
+  assert.equal(capAfterCancel?.remainingSeats, 100);
+
+  // Check checkUserRegistration reflects cancelled state
+  const check = await checkUserRegistration("user_amit", "event_tech_fest", db);
+  assert.equal(check.registered, false);
+});
+
+test("FR-009a / IT_01: Verify a cancellation automatically promotes the first waitlisted user", async () => {
+  const db = createMockDb();
+  seedFR008Data(db);
+
+  // Event: event_full_seminar (capacity 1, Amit is registered)
+  // Priya joins waitlist (position 1)
+  const w1 = await joinWaitlist({ userId: "user_priya", eventId: "event_full_seminar" }, db);
+  assert.equal(w1.waitlistPosition, 1);
+
+  // Rahul joins waitlist (position 2)
+  const w2 = await joinWaitlist({ userId: "user_rahul", eventId: "event_full_seminar" }, db);
+  assert.equal(w2.waitlistPosition, 2);
+
+  // Listen for promotion notifications
+  const dispatchedNotifications: any[] = [];
+  const unsubscribe = onWaitlistNotification((n) => {
+    dispatchedNotifications.push(n);
+  });
+
+  try {
+    // Action: Amit cancels his registration
+    const cancelRes = await cancelRegistration(
+      {
+        userId: "user_amit",
+        eventId: "event_full_seminar",
+      },
+      db
+    );
+
+    // Expected: Amit's registration is cancelled
+    assert.equal(cancelRes.success, true);
+    assert.equal(cancelRes.registration?.status, "cancelled");
+
+    // First waitlisted user (Priya) is auto-promoted to CONFIRMED
+    assert.ok(cancelRes.promotedRegistration);
+    assert.equal(cancelRes.promotedRegistration.userId, "user_priya");
+    assert.equal(cancelRes.promotedRegistration.status, "confirmed");
+
+    // Priya's status in DB is now CONFIRMED
+    const priyaCheck = await checkUserRegistration("user_priya", "event_full_seminar", db);
+    assert.equal(priyaCheck.registered, true);
+    assert.equal(priyaCheck.isWaitlisted, false);
+    assert.equal(priyaCheck.registration?.status, "confirmed");
+
+    // Rahul is now waitlist position 1
+    const rahulCheck = await checkUserRegistration("user_rahul", "event_full_seminar", db);
+    assert.equal(rahulCheck.registered, true);
+    assert.equal(rahulCheck.isWaitlisted, true);
+    assert.equal(rahulCheck.waitlistPosition, 1);
+
+    // Notification was dispatched immediately to Priya
+    assert.equal(dispatchedNotifications.length, 1);
+    assert.equal(dispatchedNotifications[0].to, "priya.nair@test.com");
+    assert.equal(dispatchedNotifications[0].userId, "user_priya");
+    assert.equal(dispatchedNotifications[0].eventId, "event_full_seminar");
+    assert.equal(dispatchedNotifications[0].type, "WAITLIST_PROMOTION");
+    assert.match(dispatchedNotifications[0].subject, /promoted/i);
+  } finally {
+    unsubscribe();
+  }
+});
+
+test("FR-009a / ST_01: End-to-End Waitlist Flow: Verify a waitlisted user is auto-promoted and notified when a seat frees up", async () => {
+  const db = createMockDb();
+  seedFR008Data(db);
+
+  // Pre-condition: Event is full; Participant Y (Amit) is registered
+  // Participant X (Priya) joins waitlist
+  const priyaWaitlist = await joinWaitlist({ userId: "user_priya", eventId: "event_full_seminar" }, db);
+  assert.equal(priyaWaitlist.success, true);
+  assert.equal(priyaWaitlist.registration?.status, "waitlisted");
+
+  const notifications: any[] = [];
+  const unsubscribe = onWaitlistNotification((n) => notifications.push(n));
+
+  try {
+    // Participant Y (Amit) cancels registration
+    const cancel = await cancelRegistration({ userId: "user_amit", eventId: "event_full_seminar" }, db);
+    assert.equal(cancel.success, true);
+
+    // Participant X's status becomes 'confirmed' and they receive promotion notification
+    const priyaState = await checkUserRegistration("user_priya", "event_full_seminar", db);
+    assert.equal(priyaState.registered, true);
+    assert.equal(priyaState.isWaitlisted, false);
+    assert.equal(priyaState.registration?.status, "confirmed");
+
+    assert.equal(notifications.length, 1);
+    assert.equal(notifications[0].to, "priya.nair@test.com");
+    assert.match(notifications[0].subject, /promoted from the waitlist/i);
+  } finally {
+    unsubscribe();
+  }
+});
+
+test("FR-009a / NFR-002: Waitlist entries are recorded in order joined (FIFO queue)", async () => {
+  const db = createMockDb();
+  seedFR008Data(db);
+
+  // event_full_seminar is full (capacity 1, Amit registered)
+  // Join Priya (t1), Rahul (t2), Sneha (t3)
+  const resPriya = await joinWaitlist({ userId: "user_priya", eventId: "event_full_seminar" }, db);
+  const resRahul = await joinWaitlist({ userId: "user_rahul", eventId: "event_full_seminar" }, db);
+  const resSneha = await joinWaitlist({ userId: "user_sneha", eventId: "event_full_seminar" }, db);
+
+  assert.equal(resPriya.waitlistPosition, 1);
+  assert.equal(resRahul.waitlistPosition, 2);
+  assert.equal(resSneha.waitlistPosition, 3);
+
+  // Amit cancels -> Priya promoted (first in line)
+  const cancel1 = await cancelRegistration({ userId: "user_amit", eventId: "event_full_seminar" }, db);
+  assert.equal(cancel1.promotedRegistration?.userId, "user_priya");
+
+  // Remaining queue: Rahul is pos 1, Sneha is pos 2
+  assert.equal(await getWaitlistPosition("user_rahul", "event_full_seminar", db), 1);
+  assert.equal(await getWaitlistPosition("user_sneha", "event_full_seminar", db), 2);
+
+  // Priya cancels -> Rahul promoted (next in line)
+  const cancel2 = await cancelRegistration({ userId: "user_priya", eventId: "event_full_seminar" }, db);
+  assert.equal(cancel2.promotedRegistration?.userId, "user_rahul");
+
+  // Remaining queue: Sneha is pos 1
+  assert.equal(await getWaitlistPosition("user_sneha", "event_full_seminar", db), 1);
+
+  // Rahul cancels -> Sneha promoted (last in line)
+  const cancel3 = await cancelRegistration({ userId: "user_rahul", eventId: "event_full_seminar" }, db);
+  assert.equal(cancel3.promotedRegistration?.userId, "user_sneha");
+
+  // Waitlist is now empty
+  assert.equal(await getWaitlistCount("event_full_seminar", db), 0);
+});
+
+test("FR-009a / NFR-002: Concurrent waitlist requests maintain data integrity and strict order without race conditions", async () => {
+  const db = createMockDb();
+  seedFR008Data(db);
+
+  const CONCURRENT = 10;
+  for (let i = 1; i <= CONCURRENT; i++) {
+    db.users.set(`user_w_${i}`, {
+      id: `user_w_${i}`,
+      name: `Waitlist User ${i}`,
+      email: `w${i}@test.com`,
+      role: "PARTICIPANT",
+      verified: true,
+      suspended: false,
+      createdAt: new Date(),
+    });
+  }
+
+  // 10 concurrent requests to join waitlist for full seminar
+  const requests = Array.from({ length: CONCURRENT }).map((_, i) =>
+    joinWaitlist({ userId: `user_w_${i + 1}`, eventId: "event_full_seminar" }, db)
+  );
+
+  const results = await Promise.all(requests);
+  const successes = results.filter((r) => r.success && r.statusCode === 201);
+  assert.equal(successes.length, CONCURRENT);
+
+  // All 10 are recorded with unique positions from 1 to 10
+  const positions = successes.map((s) => s.waitlistPosition).sort((a, b) => (a ?? 0) - (b ?? 0));
+  assert.deepEqual(positions, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+
+  // Total waitlist count is 10
+  assert.equal(await getWaitlistCount("event_full_seminar", db), 10);
+});
+
+test("FR-009a: Duplicate check prevents already waitlisted user from joining waitlist again", async () => {
+  const db = createMockDb();
+  seedFR008Data(db);
+
+  // Priya joins waitlist
+  const first = await joinWaitlist({ userId: "user_priya", eventId: "event_full_seminar" }, db);
+  assert.equal(first.success, true);
+
+  // Priya attempts to join waitlist again
+  const second = await joinWaitlist({ userId: "user_priya", eventId: "event_full_seminar" }, db);
+  assert.equal(second.success, false);
+  assert.equal(second.statusCode, 409);
+  assert.equal(second.error, ALREADY_WAITLISTED_ERROR);
+});
+
+test("FR-009a: Confirmed user cannot join waitlist", async () => {
+  const db = createMockDb();
+  seedFR008Data(db);
+
+  // Amit is already confirmed on event_full_seminar
+  const result = await joinWaitlist({ userId: "user_amit", eventId: "event_full_seminar" }, db);
+  assert.equal(result.success, false);
+  assert.equal(result.statusCode, 409);
+  assert.equal(result.error, DUPLICATE_REGISTRATION_ERROR);
+});
+
+test("FR-009a: Re-joining waitlist after cancelling joins at the end of the queue", async () => {
+  const db = createMockDb();
+  seedFR008Data(db);
+
+  // 1. Priya joins (pos 1), Rahul joins (pos 2)
+  await joinWaitlist({ userId: "user_priya", eventId: "event_full_seminar" }, db);
+  await joinWaitlist({ userId: "user_rahul", eventId: "event_full_seminar" }, db);
+
+  assert.equal(await getWaitlistPosition("user_priya", "event_full_seminar", db), 1);
+  assert.equal(await getWaitlistPosition("user_rahul", "event_full_seminar", db), 2);
+
+  // 2. Priya cancels her waitlist spot
+  const cancel = await cancelRegistration({ userId: "user_priya", eventId: "event_full_seminar" }, db);
+  assert.equal(cancel.success, true);
+
+  // Rahul is now position 1
+  assert.equal(await getWaitlistPosition("user_rahul", "event_full_seminar", db), 1);
+
+  // 3. Priya rejoins waitlist
+  const rejoin = await joinWaitlist({ userId: "user_priya", eventId: "event_full_seminar" }, db);
+  assert.equal(rejoin.success, true);
+  // Priya is now at the end of the queue (position 2)
+  assert.equal(rejoin.waitlistPosition, 2);
+  assert.equal(await getWaitlistPosition("user_rahul", "event_full_seminar", db), 1);
+  assert.equal(await getWaitlistPosition("user_priya", "event_full_seminar", db), 2);
+});
+
+test("FR-009a: Waitlisted user cancelling their own waitlist entry does not alter confirmed seat count or promote anyone", async () => {
+  const db = createMockDb();
+  seedFR008Data(db);
+
+  await joinWaitlist({ userId: "user_priya", eventId: "event_full_seminar" }, db);
+
+  const notifications: any[] = [];
+  const unsubscribe = onWaitlistNotification((n) => notifications.push(n));
+
+  try {
+    const cancel = await cancelRegistration({ userId: "user_priya", eventId: "event_full_seminar" }, db);
+    assert.equal(cancel.success, true);
+    assert.equal(cancel.promotedRegistration, undefined);
+    assert.equal(notifications.length, 0, "No promotion notification should be dispatched");
+
+    // Event confirmed count is still 1 (Amit), remaining seats is 0
+    const cap = await getEventCapacity("event_full_seminar", db);
+    assert.equal(cap?.confirmedCount, 1);
+    assert.equal(cap?.remainingSeats, 0);
+  } finally {
+    unsubscribe();
+  }
+});
+
+test("FR-009a: Cannot join waitlist for a cancelled event", async () => {
+  const db = createMockDb();
+  seedData(db);
+
+  const res = await joinWaitlist({ userId: "user_amit", eventId: "event_old_meetup" }, db);
+  assert.equal(res.success, false);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.error, EVENT_CANCELLED_ERROR);
+});
+
+test("FR-009a: Explicit joinWaitlist on an event with open seats returns error", async () => {
+  const db = createMockDb();
+  seedData(db);
+
+  // event_tech_fest has 100 seats open
+  const res = await joinWaitlist({ userId: "user_amit", eventId: "event_tech_fest" }, db);
+  assert.equal(res.success, false);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.error, EVENT_NOT_FULL_ERROR);
+});
+
+test("FR-009a: registerForEvent with waitlist: true joins waitlist when full, or registers confirmed when seats are open", async () => {
+  const db = createMockDb();
+  seedFR008Data(db);
+
+  // 1. Open seats (event_tech_fest): registers as CONFIRMED even if waitlist: true was passed
+  const openRes = await registerForEvent(
+    { userId: "user_priya", eventId: "event_tech_fest", waitlist: true },
+    db
+  );
+  assert.equal(openRes.success, true);
+  assert.equal(openRes.registration?.status, "confirmed");
+
+  // 2. Full event (event_full_seminar): registers as WAITLISTED when waitlist: true is passed
+  const fullRes = await registerForEvent(
+    { userId: "user_priya", eventId: "event_full_seminar", waitlist: true },
+    db
+  );
+  assert.equal(fullRes.success, true);
+  assert.equal(fullRes.registration?.status, "waitlisted");
+  assert.equal(fullRes.waitlistPosition, 1);
 });

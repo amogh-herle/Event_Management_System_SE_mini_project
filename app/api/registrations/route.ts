@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { Role } from "@prisma/client";
 import { registerEventSchema } from "@/lib/validation";
-import { registerForEvent, listRegistrations, AUTH_REQUIRED_ERROR } from "@/lib/registration";
+import {
+  registerForEvent,
+  cancelRegistration,
+  listRegistrations,
+  AUTH_REQUIRED_ERROR,
+} from "@/lib/registration";
 import { getAuthUserFromRequest, ensureDemoUserRow } from "@/lib/auth";
 
 export async function POST(request: Request) {
@@ -30,17 +35,27 @@ export async function POST(request: Request) {
 
   await ensureDemoUserRow(sessionUser);
 
-  const { eventId } = parsed.data;
-  const result = await registerForEvent({ eventId, userId: sessionUser.id });
+  const { eventId, waitlist } = parsed.data;
+  const result = await registerForEvent({ eventId, userId: sessionUser.id, waitlist });
 
   if (!result.success) {
     return NextResponse.json(
-      { error: result.error, registration: result.registration },
+      {
+        error: result.error,
+        registration: result.registration,
+        waitlistPosition: result.waitlistPosition,
+      },
       { status: result.statusCode }
     );
   }
 
-  return NextResponse.json(result.registration, { status: result.statusCode });
+  return NextResponse.json(
+    {
+      ...result.registration,
+      waitlistPosition: result.waitlistPosition ?? result.registration?.waitlistPosition,
+    },
+    { status: result.statusCode }
+  );
 }
 
 export async function GET(request: Request) {
@@ -52,6 +67,7 @@ export async function GET(request: Request) {
   }
 
   const eventId = searchParams.get("eventId") || undefined;
+  const status = searchParams.get("status") || undefined;
 
   // Organizers/admins may list every registration for an event they're
   // looking up (the attendee roster); everyone else can only ever see their
@@ -66,6 +82,45 @@ export async function GET(request: Request) {
     );
   }
 
-  const registrations = await listRegistrations({ userId, eventId });
+  const registrations = await listRegistrations({ userId, eventId, status });
   return NextResponse.json({ registrations });
+}
+
+export async function DELETE(request: Request) {
+  const sessionUser = await getAuthUserFromRequest(request);
+  if (!sessionUser) {
+    return NextResponse.json({ error: AUTH_REQUIRED_ERROR }, { status: 401 });
+  }
+
+  let eventId: string | undefined;
+  const { searchParams } = new URL(request.url);
+  eventId = searchParams.get("eventId") || undefined;
+
+  if (!eventId) {
+    try {
+      const body = await request.json();
+      if (body?.eventId && typeof body.eventId === "string") {
+        eventId = body.eventId;
+      }
+    } catch {
+      // Ignored if body is empty or not JSON
+    }
+  }
+
+  if (!eventId) {
+    return NextResponse.json({ error: "eventId parameter is required" }, { status: 400 });
+  }
+
+  const result = await cancelRegistration({ eventId, userId: sessionUser.id });
+  if (!result.success) {
+    return NextResponse.json({ error: result.error }, { status: result.statusCode });
+  }
+
+  return NextResponse.json({
+    success: true,
+    message: result.message ?? "Registration cancelled",
+    registration: result.registration,
+    promotedRegistration: result.promotedRegistration,
+    remainingSeats: result.remainingSeats,
+  });
 }
