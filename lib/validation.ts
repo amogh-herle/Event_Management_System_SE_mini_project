@@ -131,6 +131,7 @@ export type CreateEventInput = z.infer<typeof createEventSchema>;
 // app/api/registrations/route.ts), never from client-supplied input.
 export const registerEventSchema = z.object({
   eventId: z.string().trim().min(1, "Event ID is required"),
+  waitlist: z.boolean().optional(),
 });
 
 export type RegisterEventInput = z.infer<typeof registerEventSchema>;
