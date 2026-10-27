@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { ShieldIcon, UserIcon } from "./icons";
 import { useSessionRole, type RoleType } from "@/lib/useSessionRole";
 import { LogoutButton } from "./LogoutButton";
@@ -34,6 +35,11 @@ export function RoleSwitcher({ onRoleChange }: { onRoleChange?: (role: RoleType)
             Signed in as: <strong>{role}</strong>
           </span>
         </div>
+        {role === "ADMIN" && (
+          <Link href="/admin/users" className="btn btn-sm btn-ghost">
+            Manage Users
+          </Link>
+        )}
         <LogoutButton className="btn btn-sm btn-ghost" />
       </div>
     );
