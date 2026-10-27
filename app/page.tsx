@@ -54,6 +54,9 @@ export default async function HomePage() {
               <span style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>
                 Signed in as <strong>{sessionUser.name}</strong>
               </span>
+              <Link href="/profile" className="btn btn-ghost">
+                Profile
+              </Link>
               <LogoutButton />
             </>
           ) : (
