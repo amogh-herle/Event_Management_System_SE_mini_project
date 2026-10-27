@@ -50,7 +50,14 @@ export default async function EventPage({ params }: EventPageProps) {
     event.status === "CANCELLED" ||
     event.isCancelled === true;
 
-  let capacityInfo: { capacity: number; confirmedCount: number; remainingSeats: number; isFull: boolean } | null = null;
+  let capacityInfo: {
+    capacity: number;
+    confirmedCount: number;
+    waitlistCount: number;
+    remainingSeats: number;
+    isFull: boolean;
+  } | null = null;
+
   try {
     if (event?.id && event.id !== "demo" && event.id !== "tech-fest") {
       capacityInfo = await getEventCapacity(event.id);
@@ -62,8 +69,15 @@ export default async function EventPage({ params }: EventPageProps) {
   const capacity = typeof event.capacity === "number" ? event.capacity : 100;
   const remainingSeats = capacityInfo ? capacityInfo.remainingSeats : capacity;
   const isFull = capacityInfo ? capacityInfo.isFull : remainingSeats <= 0;
+  const waitlistCount = capacityInfo ? capacityInfo.waitlistCount : 0;
 
-  let initialRegistration: { id: string; status: string; timestamp: Date } | null = null;
+  let initialRegistration: {
+    id: string;
+    status: string;
+    timestamp: Date;
+    waitlistPosition?: number;
+  } | null = null;
+
   try {
     if (event?.id && event.id !== "demo" && event.id !== "tech-fest") {
       const authUser = await getAuthUserFromRequest();
@@ -74,6 +88,7 @@ export default async function EventPage({ params }: EventPageProps) {
             id: regCheck.registration.id,
             status: regCheck.registration.status,
             timestamp: regCheck.registration.timestamp,
+            waitlistPosition: regCheck.waitlistPosition ?? undefined,
           };
         }
       }
@@ -217,6 +232,7 @@ export default async function EventPage({ params }: EventPageProps) {
               </strong>
               <div style={{ marginTop: "0.25rem", fontWeight: 600 }}>
                 {capacity} seats {isFull ? "(Full)" : `(${remainingSeats} left)`}
+                {waitlistCount > 0 ? ` · ${waitlistCount} waitlisted` : ""}
               </div>
             </div>
           </div>
@@ -226,6 +242,7 @@ export default async function EventPage({ params }: EventPageProps) {
             isCancelled={isCancelled}
             isFull={isFull}
             remainingSeats={remainingSeats}
+            waitlistCount={waitlistCount}
             initialRegistered={!!initialRegistration}
             initialRegistrationDetails={initialRegistration ?? undefined}
           />

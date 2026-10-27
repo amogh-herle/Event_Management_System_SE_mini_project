@@ -37,6 +37,7 @@ export default function EventsDirectoryPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [registeringId, setRegisteringId] = useState<string | null>(null);
   const [registeredIds, setRegisteredIds] = useState<Set<string>>(new Set());
+  const [waitlistedIds, setWaitlistedIds] = useState<Set<string>>(new Set());
   const [registerErrors, setRegisterErrors] = useState<Record<string, string>>({});
 
   function loadEvents() {
@@ -52,13 +53,18 @@ export default function EventsDirectoryPage() {
         if (data.events && Array.isArray(data.events)) {
           setEvents(data.events);
           // Seed from the server's own answer rather than assuming nothing
-          // is registered — the server knows the real state (and for a
-          // fresh fetch tied to the current role, it's the right identity
-          // too, so a demo role switch can't leak a stale "Registered").
+          // is registered — the server knows the real state
           setRegisteredIds(
             new Set(
               data.events
                 .filter((e: StoredEvent) => e.registered)
+                .map((e: StoredEvent) => e.id)
+            )
+          );
+          setWaitlistedIds(
+            new Set(
+              data.events
+                .filter((e: StoredEvent) => e.waitlisted)
                 .map((e: StoredEvent) => e.id)
             )
           );
@@ -124,28 +130,38 @@ export default function EventsDirectoryPage() {
     }
   }
 
-  // ── Register action (quick-register straight from the directory card) ──────
-  async function handleRegister(event: StoredEvent) {
+  // ── Register / Waitlist action (quick-action straight from directory card) ─
+  async function handleRegister(event: StoredEvent, waitlist = false) {
     setRegisteringId(event.id);
     setRegisterErrors((prev) => ({ ...prev, [event.id]: "" }));
     try {
       const res = await fetch(`/api/events/${event.id}/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-user-role": role },
+        body: JSON.stringify({ waitlist }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        // 409 from this endpoint only ever means "already registered" —
-        // matching on status alone avoids drifting out of sync with the
-        // server's exact error wording.
         if (res.status === 409) {
-          setRegisteredIds((prev) => new Set(prev).add(event.id));
+          if (data.status === "waitlisted" || data.error?.toLowerCase().includes("waitlist")) {
+            setWaitlistedIds((prev) => new Set(prev).add(event.id));
+          } else {
+            setRegisteredIds((prev) => new Set(prev).add(event.id));
+          }
           return;
         }
-        setRegisterErrors((prev) => ({ ...prev, [event.id]: data.error || "Registration failed" }));
+        setRegisterErrors((prev) => ({
+          ...prev,
+          [event.id]: data.error || (waitlist ? "Failed to join waitlist" : "Registration failed"),
+        }));
         return;
       }
-      setRegisteredIds((prev) => new Set(prev).add(event.id));
+
+      if (data.status === "waitlisted") {
+        setWaitlistedIds((prev) => new Set(prev).add(event.id));
+      } else {
+        setRegisteredIds((prev) => new Set(prev).add(event.id));
+      }
     } catch {
       setRegisterErrors((prev) => ({ ...prev, [event.id]: "Network error. Please try again." }));
     } finally {
@@ -315,6 +331,9 @@ export default function EventsDirectoryPage() {
                           ) : (
                             <strong>{event.remainingSeats} left</strong>
                           )}
+                          {event.waitlistCount !== undefined && event.waitlistCount > 0 && (
+                            <span style={{ color: "var(--text-muted)" }}> ({event.waitlistCount} waitlisted)</span>
+                          )}
                         </>
                       )}
                     </span>
@@ -326,7 +345,7 @@ export default function EventsDirectoryPage() {
                     Organizer: <strong>{event.organizerName}</strong>
                   </span>
 
-                  {/* FR-007: quick-register straight from the directory card */}
+                  {/* FR-007 & FR-009a: quick-register or join waitlist from card */}
                   {tab === "all" && event.status === "ACTIVE" && (
                     <div className="card-actions">
                       {registeredIds.has(event.id) ? (
@@ -337,20 +356,35 @@ export default function EventsDirectoryPage() {
                         >
                           <CheckIcon size={14} /> Registered
                         </span>
-                      ) : event.isFull ? (
+                      ) : waitlistedIds.has(event.id) ? (
                         <span
                           className="btn btn-sm"
-                          style={{ opacity: 0.6, cursor: "not-allowed" }}
-                          aria-disabled="true"
+                          aria-live="polite"
+                          style={{ background: "var(--warning-soft)", color: "var(--warning)" }}
                         >
-                          Event Full
+                          <ClockIcon size={14} /> Waitlisted
                         </span>
+                      ) : event.isFull ? (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-warning"
+                          disabled={registeringId === event.id}
+                          onClick={() => handleRegister(event, true)}
+                          aria-label={`Join waitlist for event: ${event.name}`}
+                          style={{ border: "1px solid var(--border)" }}
+                        >
+                          {registeringId === event.id ? (
+                            <><span className="spinner" /> Joining...</>
+                          ) : (
+                            <><ClockIcon size={14} /> Join Waitlist</>
+                          )}
+                        </button>
                       ) : (
                         <button
                           type="button"
                           className="btn btn-sm btn-primary"
                           disabled={registeringId === event.id}
-                          onClick={() => handleRegister(event)}
+                          onClick={() => handleRegister(event, false)}
                           aria-label={`Register for event: ${event.name}`}
                         >
                           {registeringId === event.id ? (
