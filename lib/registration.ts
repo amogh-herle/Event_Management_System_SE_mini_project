@@ -1,6 +1,11 @@
 import { Prisma, RegistrationStatus, EventStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { waitlistPromotionEmail } from "@/lib/emailTemplates";
+import {
+  waitlistPromotionEmail,
+  registrationConfirmationEmail,
+  registrationCancellationEmail,
+  eventReminderEmail,
+} from "@/lib/emailTemplates";
 import { sendMail } from "@/lib/mailer";
 
 export const DUPLICATE_REGISTRATION_ERROR = "Already registered for this event";
@@ -13,6 +18,7 @@ export const EVENT_FULL_ERROR = "Event is full";
 export const ALREADY_WAITLISTED_ERROR = "Already on the waitlist for this event";
 export const EVENT_NOT_FULL_ERROR = "Event has available seats; waitlist is only available when capacity is reached";
 export const REGISTRATION_NOT_FOUND_ERROR = "Registration not found";
+export const CANNOT_CANCEL_CANCELLED_EVENT_ERROR = "Cannot cancel registration for a cancelled event";
 
 export interface RegisterResultRegistration {
   id: string;
@@ -33,6 +39,10 @@ export interface RegisterResultRegistration {
     name: string;
     date: Date;
     status: EventStatus | string;
+    time?: string;
+    venue?: string;
+    category?: string;
+    capacity?: number;
   };
 }
 
@@ -86,7 +96,16 @@ function formatRegistration(reg: {
     waitlistPosition: reg.waitlistPosition,
     user: reg.user ?? undefined,
     event: reg.event
-      ? { id: reg.event.id, name: reg.event.name, date: reg.event.date, status: reg.event.status }
+      ? {
+          id: reg.event.id,
+          name: (reg.event as any).name || (reg.event as any).title,
+          date: reg.event.date,
+          status: reg.event.status,
+          time: (reg.event as any).time,
+          venue: (reg.event as any).venue,
+          category: (reg.event as any).category,
+          capacity: (reg.event as any).capacity,
+        }
       : undefined,
   };
 }
@@ -170,51 +189,101 @@ async function withSerializableTransaction<T>(
 // ─────────────────────────────────────────────
 // Notification Listeners & Dispatch
 // ─────────────────────────────────────────────
-export type NotificationLogger = (notification: {
+export type NotificationType =
+  | "WAITLIST_PROMOTION"
+  | "REGISTRATION_CONFIRMATION"
+  | "CANCELLATION_CONFIRMATION"
+  | "EVENT_REMINDER";
+
+export interface DispatchedNotification {
   to: string;
   subject: string;
-  type: "WAITLIST_PROMOTION";
+  type: NotificationType;
   userId: string;
   eventId: string;
   timestamp: Date;
-}) => void | Promise<void>;
+  details?: Record<string, any>;
+}
 
-let notificationListeners: NotificationLogger[] = [];
+export type NotificationLogger = (notification: DispatchedNotification) => void | Promise<void>;
+
+let allNotificationListeners: NotificationLogger[] = [];
+let waitlistNotificationListeners: NotificationLogger[] = [];
+
+export function onNotification(listener: NotificationLogger): () => void {
+  allNotificationListeners.push(listener);
+  return () => {
+    allNotificationListeners = allNotificationListeners.filter((l) => l !== listener);
+  };
+}
 
 export function onWaitlistNotification(listener: NotificationLogger): () => void {
-  notificationListeners.push(listener);
+  waitlistNotificationListeners.push(listener);
   return () => {
-    notificationListeners = notificationListeners.filter((l) => l !== listener);
+    waitlistNotificationListeners = waitlistNotificationListeners.filter((l) => l !== listener);
   };
 }
 
 export function clearNotificationListeners(): void {
-  notificationListeners = [];
+  allNotificationListeners = [];
+  waitlistNotificationListeners = [];
 }
 
-export async function sendWaitlistPromotionNotification(promotedReg: {
-  userId: string;
-  eventId: string;
-  user?: { email: string; name: string } | null;
-  event?: { name: string; date?: Date | string } | null;
-}): Promise<boolean> {
-  const email = promotedReg.user?.email;
-  const name = promotedReg.user?.name ?? "Participant";
-  const eventName = promotedReg.event?.name ?? "Event";
-  const eventDate = promotedReg.event?.date;
+export async function sendWaitlistPromotionNotification(
+  promotedReg: {
+    userId: string;
+    eventId: string;
+    user?: { email: string; name: string } | null;
+    event?: { name?: string; title?: string; date?: Date | string } | null;
+  },
+  db?: PrismaClientLike
+): Promise<boolean> {
+  let user = promotedReg.user;
+  if (!user && promotedReg.userId && db) {
+    if (typeof db.user?.findUnique === "function") {
+      user = await db.user.findUnique({ where: { id: promotedReg.userId } });
+    } else if (db.users instanceof Map) {
+      user = db.users.get(promotedReg.userId);
+    }
+  }
 
-  for (const listener of notificationListeners) {
+  let event = promotedReg.event;
+  if (!event && promotedReg.eventId && db) {
+    if (typeof db.event?.findUnique === "function") {
+      event = await db.event.findUnique({ where: { id: promotedReg.eventId } });
+    } else if (db.events instanceof Map) {
+      event = db.events.get(promotedReg.eventId);
+    }
+  }
+
+  const email = user?.email;
+  const name = user?.name ?? "Participant";
+  const eventName = (event as any)?.name ?? (event as any)?.title ?? "Event";
+  const eventDate = event?.date;
+
+  const notification: DispatchedNotification = {
+    to: email ?? "",
+    subject: `Seat Confirmed: You've been promoted from the waitlist for ${eventName}`,
+    type: "WAITLIST_PROMOTION",
+    userId: promotedReg.userId,
+    eventId: promotedReg.eventId,
+    timestamp: new Date(),
+    details: { eventName, eventDate },
+  };
+
+  for (const listener of allNotificationListeners) {
     try {
-      await listener({
-        to: email ?? "",
-        subject: `Seat Confirmed: You've been promoted from the waitlist for ${eventName}`,
-        type: "WAITLIST_PROMOTION",
-        userId: promotedReg.userId,
-        eventId: promotedReg.eventId,
-        timestamp: new Date(),
-      });
+      await listener(notification);
     } catch (e) {
       console.error("[notifications] listener error:", e);
+    }
+  }
+
+  for (const listener of waitlistNotificationListeners) {
+    try {
+      await listener(notification);
+    } catch (e) {
+      console.error("[notifications] waitlist listener error:", e);
     }
   }
 
@@ -228,6 +297,372 @@ export async function sendWaitlistPromotionNotification(promotedReg: {
     console.error(`[notifications] failed to send waitlist promotion email to ${email}:`, err);
     return false;
   }
+}
+
+export async function sendRegistrationNotification(
+  reg: {
+    userId: string;
+    eventId: string;
+    user?: { email: string; name: string } | null;
+    event?: { name?: string; title?: string; date?: Date | string; time?: string; venue?: string } | null;
+  },
+  db?: PrismaClientLike
+): Promise<boolean> {
+  let user = reg.user;
+  if (!user && reg.userId && db) {
+    if (typeof db.user?.findUnique === "function") {
+      user = await db.user.findUnique({ where: { id: reg.userId } });
+    } else if (db.users instanceof Map) {
+      user = db.users.get(reg.userId);
+    }
+  }
+
+  let event = reg.event;
+  if ((!event || (event as any).venue === undefined) && reg.eventId && db) {
+    if (typeof db.event?.findUnique === "function") {
+      const fullEvt = await db.event.findUnique({ where: { id: reg.eventId } });
+      if (fullEvt) {
+        event = { ...fullEvt, ...event, venue: fullEvt.venue, time: fullEvt.time };
+      }
+    } else if (db.events instanceof Map) {
+      const fullEvt = db.events.get(reg.eventId);
+      if (fullEvt) {
+        event = { ...fullEvt, ...event, venue: fullEvt.venue, time: fullEvt.time };
+      }
+    }
+  }
+
+  const email = user?.email;
+  const name = user?.name ?? "Participant";
+  const eventName = (event as any)?.name ?? (event as any)?.title ?? "Event";
+  const eventDate = event?.date;
+  const eventTime = (event as any)?.time;
+  const eventVenue = (event as any)?.venue;
+
+  const notification: DispatchedNotification = {
+    to: email ?? "",
+    subject: `Registration Confirmed: ${eventName}`,
+    type: "REGISTRATION_CONFIRMATION",
+    userId: reg.userId,
+    eventId: reg.eventId,
+    timestamp: new Date(),
+    details: { eventName, eventDate, eventTime, eventVenue },
+  };
+
+  for (const listener of allNotificationListeners) {
+    try {
+      await listener(notification);
+    } catch (e) {
+      console.error("[notifications] listener error:", e);
+    }
+  }
+
+  if (!email) return false;
+
+  try {
+    const { subject, html } = registrationConfirmationEmail(name, eventName, eventDate, eventTime, eventVenue);
+    await sendMail(email, subject, html);
+    return true;
+  } catch (err) {
+    console.error(`[notifications] failed to send registration confirmation email to ${email}:`, err);
+    return false;
+  }
+}
+
+export async function sendCancellationNotification(
+  reg: {
+    userId: string;
+    eventId: string;
+    user?: { email: string; name: string } | null;
+    event?: { name?: string; title?: string; date?: Date | string } | null;
+  },
+  db?: PrismaClientLike
+): Promise<boolean> {
+  let user = reg.user;
+  if (!user && reg.userId && db) {
+    if (typeof db.user?.findUnique === "function") {
+      user = await db.user.findUnique({ where: { id: reg.userId } });
+    } else if (db.users instanceof Map) {
+      user = db.users.get(reg.userId);
+    }
+  }
+
+  let event = reg.event;
+  if ((!event || (event as any).venue === undefined) && reg.eventId && db) {
+    if (typeof db.event?.findUnique === "function") {
+      const fullEvt = await db.event.findUnique({ where: { id: reg.eventId } });
+      if (fullEvt) {
+        event = { ...fullEvt, ...event, venue: fullEvt.venue, time: fullEvt.time };
+      }
+    } else if (db.events instanceof Map) {
+      const fullEvt = db.events.get(reg.eventId);
+      if (fullEvt) {
+        event = { ...fullEvt, ...event, venue: fullEvt.venue, time: fullEvt.time };
+      }
+    }
+  }
+
+  const email = user?.email;
+  const name = user?.name ?? "Participant";
+  const eventName = (event as any)?.name ?? (event as any)?.title ?? "Event";
+  const eventDate = event?.date;
+
+  const notification: DispatchedNotification = {
+    to: email ?? "",
+    subject: `Registration Cancelled: ${eventName}`,
+    type: "CANCELLATION_CONFIRMATION",
+    userId: reg.userId,
+    eventId: reg.eventId,
+    timestamp: new Date(),
+    details: { eventName, eventDate },
+  };
+
+  for (const listener of allNotificationListeners) {
+    try {
+      await listener(notification);
+    } catch (e) {
+      console.error("[notifications] listener error:", e);
+    }
+  }
+
+  if (!email) return false;
+
+  try {
+    const { subject, html } = registrationCancellationEmail(name, eventName, eventDate);
+    await sendMail(email, subject, html);
+    return true;
+  } catch (err) {
+    console.error(`[notifications] failed to send cancellation email to ${email}:`, err);
+    return false;
+  }
+}
+
+export async function sendEventReminderNotification(
+  reg: {
+    userId: string;
+    eventId: string;
+    user?: { email: string; name: string } | null;
+    event: { name?: string; title?: string; date: Date | string; time?: string; venue?: string };
+  },
+  db?: PrismaClientLike
+): Promise<boolean> {
+  let user = reg.user;
+  if (!user && reg.userId && db) {
+    if (typeof db.user?.findUnique === "function") {
+      user = await db.user.findUnique({ where: { id: reg.userId } });
+    } else if (db.users instanceof Map) {
+      user = db.users.get(reg.userId);
+    }
+  }
+
+  const email = user?.email;
+  const name = user?.name ?? "Participant";
+  const eventName = (reg.event as any).name ?? (reg.event as any).title ?? "Event";
+  const eventDate = reg.event.date;
+  const eventTime = reg.event.time;
+  const eventVenue = reg.event.venue;
+
+  const notification: DispatchedNotification = {
+    to: email ?? "",
+    subject: `Reminder: ${eventName} is coming up`,
+    type: "EVENT_REMINDER",
+    userId: reg.userId,
+    eventId: reg.eventId,
+    timestamp: new Date(),
+    details: { eventName, eventDate, eventTime, eventVenue },
+  };
+
+  for (const listener of allNotificationListeners) {
+    try {
+      await listener(notification);
+    } catch (e) {
+      console.error("[notifications] listener error:", e);
+    }
+  }
+
+  if (!email) return false;
+
+  try {
+    const { subject, html } = eventReminderEmail(name, eventName, eventDate, eventTime, eventVenue);
+    await sendMail(email, subject, html);
+    return true;
+  } catch (err) {
+    console.error(`[notifications] failed to send event reminder email to ${email}:`, err);
+    return false;
+  }
+}
+
+export interface SendEventRemindersOptions {
+  windowHours?: number; // default: 24
+  referenceDate?: Date; // default: now
+}
+
+export interface SendEventRemindersResult {
+  success: boolean;
+  eventsProcessed: number;
+  remindersSent: number;
+  notifications: Array<{
+    userId: string;
+    eventId: string;
+    email: string;
+    eventName: string;
+    eventDate: Date | string;
+    eventTime?: string;
+  }>;
+}
+
+export async function sendEventReminders(
+  options: SendEventRemindersOptions = {},
+  db: PrismaClientLike = prisma
+): Promise<SendEventRemindersResult> {
+  const windowHours = options.windowHours ?? 24;
+  const refDate = options.referenceDate ? new Date(options.referenceDate) : new Date();
+  const windowEnd = new Date(refDate.getTime() + windowHours * 60 * 60 * 1000);
+
+  let upcomingEvents: any[] = [];
+
+  if (typeof db.event?.findMany === "function") {
+    try {
+      upcomingEvents = await db.event.findMany({
+        where: {
+          status: EventStatus.ACTIVE,
+          date: {
+            gte: refDate,
+            lte: windowEnd,
+          },
+        },
+        include: {
+          registrations: {
+            where: {
+              status: RegistrationStatus.CONFIRMED,
+            },
+            include: {
+              user: { select: { id: true, name: true, email: true } },
+            },
+          },
+        },
+      });
+    } catch {
+      try {
+        const allEvents = await db.event.findMany({});
+        upcomingEvents = allEvents.filter((e: any) => {
+          const d = new Date(e.date);
+          const isActive =
+            e.status === EventStatus.ACTIVE ||
+            e.status === "ACTIVE" ||
+            (!e.isCancelled && !e.status);
+          return isActive && d >= refDate && d <= windowEnd;
+        });
+      } catch {
+        // Fallback to in-memory store if DB is offline or unconfigured
+        try {
+          const { inMemoryEvents } = await import("@/app/api/events/store");
+          upcomingEvents = inMemoryEvents.filter((e: any) => {
+            const d = new Date(e.date);
+            const isActive = e.status === "ACTIVE";
+            return isActive && d >= refDate && d <= windowEnd;
+          });
+        } catch {
+          upcomingEvents = [];
+        }
+      }
+    }
+  } else if (db.events instanceof Map) {
+    upcomingEvents = Array.from(db.events.values()).filter((e: any) => {
+      const d = new Date(e.date);
+      const isActive =
+        e.status === EventStatus.ACTIVE ||
+        e.status === "ACTIVE" ||
+        (!e.isCancelled && e.status !== EventStatus.CANCELLED);
+      return isActive && d >= refDate && d <= windowEnd;
+    });
+  }
+
+  let remindersSent = 0;
+  const notifications: Array<{
+    userId: string;
+    eventId: string;
+    email: string;
+    eventName: string;
+    eventDate: Date | string;
+    eventTime?: string;
+  }> = [];
+
+  for (const evt of upcomingEvents) {
+    let confirmedRegs = evt.registrations;
+    if (!confirmedRegs) {
+      if (typeof db.registration?.findMany === "function") {
+        try {
+          confirmedRegs = await db.registration.findMany({
+            where: {
+              eventId: evt.id,
+              status: RegistrationStatus.CONFIRMED,
+            },
+            include: {
+              user: { select: { id: true, name: true, email: true } },
+            },
+          });
+        } catch {
+          confirmedRegs = null;
+        }
+      }
+      if (!confirmedRegs && db.registrations instanceof Map) {
+        confirmedRegs = Array.from(db.registrations.values()).filter(
+          (r: any) =>
+            r.eventId === evt.id &&
+            (r.status === RegistrationStatus.CONFIRMED || r.status === "CONFIRMED")
+        );
+      }
+    }
+
+    if (Array.isArray(confirmedRegs)) {
+      for (const reg of confirmedRegs) {
+        if (reg.status !== RegistrationStatus.CONFIRMED && reg.status !== "CONFIRMED") continue;
+
+        let u = reg.user;
+        if (!u && reg.userId) {
+          if (typeof db.user?.findUnique === "function") {
+            u = await db.user.findUnique({ where: { id: reg.userId } });
+          } else if (db.users instanceof Map) {
+            u = db.users.get(reg.userId);
+          }
+        }
+
+        if (u?.email) {
+          await sendEventReminderNotification(
+            {
+              userId: reg.userId,
+              eventId: evt.id,
+              user: u,
+              event: {
+                name: evt.name || evt.title,
+                date: evt.date,
+                time: evt.time,
+                venue: evt.venue,
+              },
+            },
+            db
+          );
+          remindersSent++;
+          notifications.push({
+            userId: reg.userId,
+            eventId: evt.id,
+            email: u.email,
+            eventName: evt.name || evt.title,
+            eventDate: evt.date,
+            eventTime: evt.time,
+          });
+        }
+      }
+    }
+  }
+
+  return {
+    success: true,
+    eventsProcessed: upcomingEvents.length,
+    remindersSent,
+    notifications,
+  };
 }
 
 async function calculateWaitlistPosition(
@@ -503,6 +938,9 @@ export async function registerForEvent(
                 event: { select: { id: true, name: true, date: true, status: true } },
               },
             });
+
+        // Send registration confirmation notification and email (FR-009b / UC-05 Step 7 / IT_02)
+        await sendRegistrationNotification(saved, tx);
 
         return {
           success: true,
@@ -812,6 +1250,14 @@ export async function cancelRegistration(
         };
       }
 
+      if (isEventCancelled(event.status)) {
+        return {
+          success: false,
+          statusCode: 400,
+          error: CANNOT_CANCEL_CANCELLED_EVENT_ERROR,
+        };
+      }
+
       const existing = await tx.registration.findUnique({
         where: {
           userId_eventId: {
@@ -849,6 +1295,7 @@ export async function cancelRegistration(
       });
 
       if (wasWaitlisted) {
+        await sendCancellationNotification(cancelled, tx);
         return {
           success: true,
           statusCode: 200,
@@ -917,7 +1364,10 @@ export async function cancelRegistration(
         });
 
         // Notify promoted user immediately
-        await sendWaitlistPromotionNotification(promoted);
+        await sendWaitlistPromotionNotification(promoted, tx);
+
+        // Notify cancelling user immediately (FR-009b / UC-07 Step 7)
+        await sendCancellationNotification(cancelled, tx);
 
         return {
           success: true,
@@ -951,6 +1401,9 @@ export async function cancelRegistration(
         ).length;
       }
       const remainingSeats = Math.max(0, eventCapacity - confirmedCount);
+
+      // Notify cancelling user immediately (FR-009b / UC-07 Step 7)
+      await sendCancellationNotification(cancelled, tx);
 
       return {
         success: true,
@@ -1122,14 +1575,54 @@ export async function listRegistrations(
   if (filter.eventId) where.eventId = filter.eventId;
   if (filter.status) where.status = filter.status;
 
-  const registrations = await db.registration.findMany({
-    where,
-    include: {
-      event: { select: { id: true, name: true, date: true, status: true } },
-      user: { select: { id: true, name: true, email: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  let rawList: any[] = [];
+  if (typeof db.registration?.findMany === "function") {
+    rawList = await db.registration.findMany({
+      where,
+      include: {
+        event: {
+          select: {
+            id: true,
+            name: true,
+            date: true,
+            status: true,
+            time: true,
+            venue: true,
+            category: true,
+            capacity: true,
+          },
+        },
+        user: { select: { id: true, name: true, email: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  } else if (db.registrations instanceof Map) {
+    rawList = Array.from(db.registrations.values()).filter((r: any) => {
+      if (filter.userId && r.userId !== filter.userId) return false;
+      if (filter.eventId && r.eventId !== filter.eventId) return false;
+      if (filter.status && r.status !== filter.status) return false;
+      return true;
+    });
+    rawList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
 
-  return registrations.map((r: any) => formatRegistration(r));
+  const results = await Promise.all(
+    rawList.map(async (r: any) => {
+      const isWaitlisted =
+        r.status === RegistrationStatus.WAITLISTED || r.status === "WAITLISTED";
+      let pos: number | undefined;
+      if (isWaitlisted) {
+        try {
+          pos = await calculateWaitlistPosition(r.userId, r.eventId, r.createdAt, db);
+        } catch {}
+      }
+      const formatted = formatRegistration(r);
+      if (pos !== undefined) {
+        formatted.waitlistPosition = pos;
+      }
+      return formatted;
+    })
+  );
+
+  return results;
 }

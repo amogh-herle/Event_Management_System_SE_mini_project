@@ -47,6 +47,70 @@ export function waitlistPromotionEmail(name: string, eventName: string, eventDat
   return { subject, html };
 }
 
+export function registrationConfirmationEmail(
+  name: string,
+  eventName: string,
+  eventDate?: Date | string,
+  eventTime?: string,
+  eventVenue?: string
+) {
+  const subject = `Registration Confirmed: ${eventName}`;
+  const formattedDate = eventDate ? new Date(eventDate).toLocaleDateString() : "";
+  const html = `
+    <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+      <h2>You're registered, ${escapeHtml(name)}!</h2>
+      <p>Your registration for <strong>${escapeHtml(eventName)}</strong> has been confirmed.</p>
+      ${formattedDate ? `<p><strong>Date:</strong> ${formattedDate}</p>` : ""}
+      ${eventTime ? `<p><strong>Time:</strong> ${escapeHtml(eventTime)}</p>` : ""}
+      ${eventVenue ? `<p><strong>Venue:</strong> ${escapeHtml(eventVenue)}</p>` : ""}
+      <p>Your seat is confirmed and reserved. We look forward to seeing you there!</p>
+    </div>
+  `;
+  return { subject, html };
+}
+
+export function registrationCancellationEmail(
+  name: string,
+  eventName: string,
+  eventDate?: Date | string
+) {
+  const subject = `Registration Cancelled: ${eventName}`;
+  const formattedDate = eventDate ? new Date(eventDate).toLocaleDateString() : "";
+  const html = `
+    <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+      <h2>Registration Cancelled</h2>
+      <p>Hi ${escapeHtml(name)},</p>
+      <p>Your registration for <strong>${escapeHtml(eventName)}</strong> has been cancelled.</p>
+      ${formattedDate ? `<p><strong>Date:</strong> ${formattedDate}</p>` : ""}
+      <p>Your reserved seat has been released. If this was a mistake, you can re-register from the events directory while seats remain available.</p>
+    </div>
+  `;
+  return { subject, html };
+}
+
+export function eventReminderEmail(
+  name: string,
+  eventName: string,
+  eventDate: Date | string,
+  eventTime?: string,
+  eventVenue?: string
+) {
+  const subject = `Reminder: ${eventName} is coming up`;
+  const formattedDate = new Date(eventDate).toLocaleDateString();
+  const html = `
+    <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+      <h2>Upcoming Event Reminder</h2>
+      <p>Hi ${escapeHtml(name)},</p>
+      <p>This is a friendly reminder that you are registered for <strong>${escapeHtml(eventName)}</strong>.</p>
+      <p><strong>Date:</strong> ${formattedDate}</p>
+      ${eventTime ? `<p><strong>Time:</strong> ${escapeHtml(eventTime)}</p>` : ""}
+      ${eventVenue ? `<p><strong>Venue:</strong> ${escapeHtml(eventVenue)}</p>` : ""}
+      <p>We look forward to seeing you there!</p>
+    </div>
+  `;
+  return { subject, html };
+}
+
 function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string)

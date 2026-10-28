@@ -114,6 +114,9 @@ export default async function EventPage({ params }: EventPageProps) {
           <Link href="/events" className="btn" style={{ background: "transparent" }}>
             Browse Events
           </Link>
+          <Link href="/events?tab=registrations" className="btn" style={{ background: "transparent" }}>
+            My Registrations
+          </Link>
         </nav>
       </header>
 
