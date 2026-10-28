@@ -14,6 +14,17 @@ function getTransporter(): Promise<Transporter> {
   if (transporterPromise) return transporterPromise;
 
   transporterPromise = (async () => {
+    // Checked before the real-credentials branch below: importing
+    // @prisma/client anywhere in the process (even just for its types, as
+    // the test suite does) auto-loads .env as a side effect, so a test run
+    // must never fall through to a real Gmail send just because EMAIL_USER
+    // happens to be set in the developer's .env.
+    if (process.env.NODE_ENV === "test") {
+      return nodemailer.createTransport({
+        jsonTransport: true,
+      });
+    }
+
     if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       return nodemailer.createTransport({
         service: "gmail",
@@ -24,7 +35,7 @@ function getTransporter(): Promise<Transporter> {
       });
     }
 
-    if (process.env.NODE_ENV === "test" || !process.env.EMAIL_USER) {
+    if (!process.env.EMAIL_USER) {
       return nodemailer.createTransport({
         jsonTransport: true,
       });
