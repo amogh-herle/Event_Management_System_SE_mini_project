@@ -9,9 +9,12 @@ import {
   getWaitlistCount,
   checkUserRegistration,
   getEventCapacity,
+  listRegistrations,
   clearEventLocks,
+  onNotification,
   onWaitlistNotification,
   clearNotificationListeners,
+  sendEventReminders,
   DUPLICATE_REGISTRATION_ERROR,
   EVENT_CANCELLED_ERROR,
   EVENT_NOT_FOUND_ERROR,
@@ -22,7 +25,13 @@ import {
   ALREADY_WAITLISTED_ERROR,
   EVENT_NOT_FULL_ERROR,
   REGISTRATION_NOT_FOUND_ERROR,
+  CANNOT_CANCEL_CANCELLED_EVENT_ERROR,
 } from "../lib/registration";
+import {
+  registrationConfirmationEmail,
+  registrationCancellationEmail,
+  eventReminderEmail,
+} from "../lib/emailTemplates";
 
 /**
  * Mock database creating in-memory storage that simulates PostgreSQL & Prisma
@@ -56,6 +65,14 @@ function createMockDb() {
       async findUnique({ where }: any) {
         return events.get(where.id) || null;
       },
+      async findMany({ where }: any = {}) {
+        return Array.from(events.values()).filter((e) => {
+          if (where?.status && e.status !== where.status) return false;
+          if (where?.date?.gte && new Date(e.date).getTime() < new Date(where.date.gte).getTime()) return false;
+          if (where?.date?.lte && new Date(e.date).getTime() > new Date(where.date.lte).getTime()) return false;
+          return true;
+        });
+      },
     },
 
     registration: {
@@ -70,6 +87,40 @@ function createMockDb() {
           }
         }
         return null;
+      },
+
+      async findMany({ where, include, orderBy }: any = {}) {
+        let list = Array.from(registrations.values());
+        if (where?.eventId) list = list.filter((r) => r.eventId === where.eventId);
+        if (where?.userId) list = list.filter((r) => r.userId === where.userId);
+        if (where?.status) list = list.filter((r) => r.status === where.status);
+        if (orderBy?.createdAt === "desc") {
+          list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        }
+        return list.map((r) => {
+          const user = users.get(r.userId);
+          const event = events.get(r.eventId);
+          return {
+            ...r,
+            ...(include?.user ? { user: { id: user?.id, name: user?.name, email: user?.email } } : {}),
+            ...(include?.event
+              ? {
+                  event: {
+                    id: event?.id,
+                    name: event?.name || event?.title,
+                    date: event?.date,
+                    status:
+                      event?.status ||
+                      (event?.isCancelled ? EventStatus.CANCELLED : EventStatus.ACTIVE),
+                    time: event?.time,
+                    venue: event?.venue,
+                    category: event?.category,
+                    capacity: event?.capacity,
+                  },
+                }
+              : {}),
+          };
+        });
       },
 
       async findFirst({ where, orderBy, include }: any = {}) {
@@ -152,16 +203,6 @@ function createMockDb() {
           }
         }
         throw new Error("Record to update not found");
-      },
-
-      async findMany({ where }: any = {}) {
-        const list = Array.from(registrations.values());
-        return list.filter((r) => {
-          if (where?.userId && r.userId !== where.userId) return false;
-          if (where?.eventId && r.eventId !== where.eventId) return false;
-          if (where?.status && r.status !== where.status) return false;
-          return true;
-        });
       },
     },
   };
@@ -1363,4 +1404,448 @@ test("FR-009a: registerForEvent with waitlist: true joins waitlist when full, or
   assert.equal(fullRes.success, true);
   assert.equal(fullRes.registration?.status, "waitlisted");
   assert.equal(fullRes.waitlistPosition, 1);
+});
+
+// -----------------------------------------------------------------------------
+// FR-009b Test Suites (Self-cancellation and registration notifications)
+// -----------------------------------------------------------------------------
+
+test("FR-009b / UT_02: Self-cancellation updates status to cancelled, increments seat count immediately, and dispatches cancellation email", async () => {
+  const db = createMockDb();
+  seedData(db);
+
+  // Pre-condition: Priya has an active registration for Tech Fest
+  const regResult = await registerForEvent(
+    { userId: "user_priya", eventId: "event_tech_fest" },
+    db
+  );
+  assert.equal(regResult.success, true);
+  assert.equal(regResult.statusCode, 201);
+
+  const capBefore = await getEventCapacity("event_tech_fest", db);
+  assert.equal(capBefore?.confirmedCount, 1);
+  assert.equal(capBefore?.remainingSeats, 99);
+
+  // Capture notifications
+  const notifications: any[] = [];
+  const unsubscribe = onNotification((n) => {
+    notifications.push(n);
+  });
+
+  try {
+    // Action: Priya cancels her registration
+    const cancelResult = await cancelRegistration(
+      { userId: "user_priya", eventId: "event_tech_fest" },
+      db
+    );
+
+    // Expected 1: Cancellation succeeds
+    assert.equal(cancelResult.success, true);
+    assert.equal(cancelResult.statusCode, 200);
+    assert.equal(cancelResult.registration?.status, "cancelled");
+    assert.equal(cancelResult.remainingSeats, 100);
+
+    // Expected 2: Seat count increases immediately
+    const capAfter = await getEventCapacity("event_tech_fest", db);
+    assert.equal(capAfter?.confirmedCount, 0);
+    assert.equal(capAfter?.remainingSeats, 100);
+
+    // Expected 3: Cancellation confirmation email dispatched to Priya
+    const cancelNotification = notifications.find(
+      (n) => n.type === "CANCELLATION_CONFIRMATION" && n.userId === "user_priya"
+    );
+    assert.ok(cancelNotification, "Cancellation confirmation notification must be dispatched");
+    assert.equal(cancelNotification.to, "priya.nair@test.com");
+    assert.equal(cancelNotification.eventId, "event_tech_fest");
+    assert.match(cancelNotification.subject, /cancelled/i);
+    assert.match(cancelNotification.subject, /Tech Fest/i);
+  } finally {
+    unsubscribe();
+  }
+});
+
+test("FR-009b / IT_02: Successful registration with open seats sends confirmation email immediately", async () => {
+  const db = createMockDb();
+  seedData(db);
+
+  // Add Workshop A
+  db.events.set("event_workshop_a", {
+    id: "event_workshop_a",
+    name: "Workshop A",
+    title: "Workshop A",
+    date: new Date("2026-11-05T14:00:00Z"),
+    time: "02:00 PM",
+    venue: "Auditorium 1",
+    category: "Workshops",
+    capacity: 20,
+    status: EventStatus.ACTIVE,
+    isCancelled: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  const notifications: any[] = [];
+  const unsubscribe = onNotification((n) => {
+    notifications.push(n);
+  });
+
+  try {
+    // Action: Priya registers for Workshop A with open seats
+    const result = await registerForEvent(
+      { userId: "user_priya", eventId: "event_workshop_a" },
+      db
+    );
+
+    assert.equal(result.success, true);
+    assert.equal(result.statusCode, 201);
+    assert.equal(result.registration?.status, "confirmed");
+
+    // Expected: A registration confirmation email is sent immediately
+    const confirmNotification = notifications.find(
+      (n) => n.type === "REGISTRATION_CONFIRMATION" && n.userId === "user_priya"
+    );
+    assert.ok(confirmNotification, "Confirmation notification must be dispatched immediately");
+    assert.equal(confirmNotification.to, "priya.nair@test.com");
+    assert.equal(confirmNotification.eventId, "event_workshop_a");
+    assert.match(confirmNotification.subject, /confirmed/i);
+    assert.match(confirmNotification.subject, /Workshop A/i);
+    assert.equal(confirmNotification.details?.eventVenue, "Auditorium 1");
+    assert.equal(confirmNotification.details?.eventTime, "02:00 PM");
+  } finally {
+    unsubscribe();
+  }
+});
+
+test("FR-009b / ST_02: Scheduled reminder job sends reminder notification to confirmed participants for events starting within 24h", async () => {
+  const db = createMockDb();
+  seedData(db);
+
+  const baseTime = new Date("2026-10-28T10:00:00Z");
+
+  // Event 1: starts in 18 hours (inside 24h window)
+  const eventIn18h = new Date(baseTime.getTime() + 18 * 60 * 60 * 1000);
+  db.events.set("evt_starts_in_18h", {
+    id: "evt_starts_in_18h",
+    name: "Autonomous AI Summit",
+    title: "Autonomous AI Summit",
+    date: eventIn18h,
+    time: "04:00 AM",
+    venue: "Innovation Hub",
+    category: "Technology",
+    capacity: 50,
+    status: EventStatus.ACTIVE,
+    isCancelled: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  // Event 2: starts in 36 hours (outside 24h window)
+  const eventIn36h = new Date(baseTime.getTime() + 36 * 60 * 60 * 1000);
+  db.events.set("evt_starts_in_36h", {
+    id: "evt_starts_in_36h",
+    name: "Future Robotics Meet",
+    title: "Future Robotics Meet",
+    date: eventIn36h,
+    time: "10:00 PM",
+    venue: "Robotics Lab",
+    category: "Technology",
+    capacity: 50,
+    status: EventStatus.ACTIVE,
+    isCancelled: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  // Register Amit and Priya for Event 1 (inside window)
+  await registerForEvent({ userId: "user_amit", eventId: "evt_starts_in_18h" }, db);
+  await registerForEvent({ userId: "user_priya", eventId: "evt_starts_in_18h" }, db);
+
+  // Register Rahul for Event 2 (outside window)
+  await registerForEvent({ userId: "user_rahul", eventId: "evt_starts_in_36h" }, db);
+
+  const dispatched: any[] = [];
+  const unsubscribe = onNotification((n) => {
+    dispatched.push(n);
+  });
+
+  try {
+    // Trigger scheduled reminder job for 24h window
+    const result = await sendEventReminders(
+      { windowHours: 24, referenceDate: baseTime },
+      db
+    );
+
+    assert.equal(result.success, true);
+    assert.equal(result.eventsProcessed, 1);
+    assert.equal(result.remindersSent, 2);
+
+    // Both Amit and Priya received reminders referencing the correct event and time
+    const amitReminder = dispatched.find(
+      (n) => n.type === "EVENT_REMINDER" && n.userId === "user_amit"
+    );
+    assert.ok(amitReminder, "Amit must receive reminder email");
+    assert.equal(amitReminder.to, "amit.rao@test.com");
+    assert.equal(amitReminder.eventId, "evt_starts_in_18h");
+    assert.match(amitReminder.subject, /Autonomous AI Summit/i);
+
+    const priyaReminder = dispatched.find(
+      (n) => n.type === "EVENT_REMINDER" && n.userId === "user_priya"
+    );
+    assert.ok(priyaReminder, "Priya must receive reminder email");
+    assert.equal(priyaReminder.to, "priya.nair@test.com");
+    assert.equal(priyaReminder.eventId, "evt_starts_in_18h");
+
+    // Rahul's event is in 36 hours, so NO reminder was dispatched to Rahul
+    const rahulReminder = dispatched.find(
+      (n) => n.type === "EVENT_REMINDER" && n.userId === "user_rahul"
+    );
+    assert.equal(rahulReminder, undefined, "Rahul must not receive reminder before his 24h window");
+  } finally {
+    unsubscribe();
+  }
+});
+
+test("FR-009b: Reminder job ignores cancelled events and cancelled registrations", async () => {
+  const db = createMockDb();
+  seedData(db);
+
+  const baseTime = new Date("2026-10-28T10:00:00Z");
+  const eventTime = new Date(baseTime.getTime() + 10 * 60 * 60 * 1000);
+
+  // Active event with cancelled registration
+  db.events.set("evt_reminder_cancelled_reg", {
+    id: "evt_reminder_cancelled_reg",
+    name: "Webinar",
+    date: eventTime,
+    time: "08:00 PM",
+    venue: "Online",
+    category: "Tech",
+    capacity: 10,
+    status: EventStatus.ACTIVE,
+    isCancelled: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  // Amit registers then cancels
+  await registerForEvent({ userId: "user_amit", eventId: "evt_reminder_cancelled_reg" }, db);
+  await cancelRegistration({ userId: "user_amit", eventId: "evt_reminder_cancelled_reg" }, db);
+
+  // Cancelled event with active registration
+  db.events.set("evt_reminder_cancelled_evt", {
+    id: "evt_reminder_cancelled_evt",
+    name: "Cancelled Seminar",
+    date: eventTime,
+    time: "08:00 PM",
+    venue: "Online",
+    category: "Tech",
+    capacity: 10,
+    status: EventStatus.CANCELLED,
+    isCancelled: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  db.registrations.set("user_priya_evt_reminder_cancelled_evt", {
+    id: "reg_priya_canc_evt",
+    userId: "user_priya",
+    eventId: "evt_reminder_cancelled_evt",
+    status: RegistrationStatus.CONFIRMED,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  const dispatched: any[] = [];
+  const unsubscribe = onNotification((n) => { dispatched.push(n); });
+
+  try {
+    const result = await sendEventReminders(
+      { windowHours: 24, referenceDate: baseTime },
+      db
+    );
+    assert.equal(result.remindersSent, 0);
+    assert.equal(dispatched.filter((n) => n.type === "EVENT_REMINDER").length, 0);
+  } finally {
+    unsubscribe();
+  }
+});
+
+test("FR-009b: Reminder job does not re-send to a registrant already reminded in a prior run", async () => {
+  const db = createMockDb();
+  seedData(db);
+
+  const baseTime = new Date("2026-10-28T10:00:00Z");
+  const eventTime = new Date(baseTime.getTime() + 12 * 60 * 60 * 1000);
+
+  db.events.set("evt_remind_dedupe", {
+    id: "evt_remind_dedupe",
+    name: "Repeat Reminder Check",
+    date: eventTime,
+    time: "09:00 PM",
+    venue: "Hall B",
+    category: "Tech",
+    capacity: 10,
+    status: EventStatus.ACTIVE,
+    isCancelled: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  await registerForEvent({ userId: "user_amit", eventId: "evt_remind_dedupe" }, db);
+
+  const dispatched: any[] = [];
+  const unsubscribe = onNotification((n) => { dispatched.push(n); });
+
+  try {
+    // A cron job calling this hourly with a 24h window would otherwise
+    // re-send the same reminder on every single invocation.
+    const first = await sendEventReminders({ windowHours: 24, referenceDate: baseTime }, db);
+    assert.equal(first.remindersSent, 1);
+
+    const second = await sendEventReminders({ windowHours: 24, referenceDate: baseTime }, db);
+    assert.equal(second.remindersSent, 0, "a second run within the same window must not re-send");
+
+    assert.equal(dispatched.filter((n) => n.type === "EVENT_REMINDER").length, 1);
+  } finally {
+    unsubscribe();
+  }
+});
+
+test("FR-009b: Waitlist cancellation dispatches cancellation confirmation to waitlisted user", async () => {
+  const db = createMockDb();
+  seedFR008Data(db);
+
+  // Join waitlist for full seminar
+  await joinWaitlist({ userId: "user_priya", eventId: "event_full_seminar" }, db);
+
+  const dispatched: any[] = [];
+  const unsubscribe = onNotification((n) => {
+    dispatched.push(n);
+  });
+
+  try {
+    const cancelRes = await cancelRegistration(
+      { userId: "user_priya", eventId: "event_full_seminar" },
+      db
+    );
+    assert.equal(cancelRes.success, true);
+    assert.equal(cancelRes.message, "Waitlist entry cancelled");
+
+    const cancelNotif = dispatched.find(
+      (n) => n.type === "CANCELLATION_CONFIRMATION" && n.userId === "user_priya"
+    );
+    assert.ok(cancelNotif, "Waitlisted user must receive cancellation notification upon leaving waitlist");
+    assert.equal(cancelNotif.to, "priya.nair@test.com");
+  } finally {
+    unsubscribe();
+  }
+});
+
+test("FR-009b: Self-cancellation is rejected when event is already cancelled", async () => {
+  const db = createMockDb();
+  seedData(db);
+
+  // event_old_meetup is cancelled in seedData
+  const regKey = "user_amit_event_old_meetup";
+  db.registrations.set(regKey, {
+    id: "reg_amit_old_meetup",
+    userId: "user_amit",
+    eventId: "event_old_meetup",
+    status: RegistrationStatus.CONFIRMED,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  const res = await cancelRegistration(
+    { userId: "user_amit", eventId: "event_old_meetup" },
+    db
+  );
+  assert.equal(res.success, false);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.error, CANNOT_CANCEL_CANCELLED_EVENT_ERROR);
+});
+
+test("FR-009b: Notification delivery failure does not prevent registration or cancellation (fault tolerance per UC-09)", async () => {
+  const db = createMockDb();
+  seedData(db);
+
+  // Faulty listener that throws an unhandled error
+  const unsubscribe = onNotification(() => {
+    throw new Error("Simulated email server crash / connection refused");
+  });
+
+  try {
+    // Registration succeeds despite notification failure
+    const reg = await registerForEvent(
+      { userId: "user_amit", eventId: "event_tech_fest" },
+      db
+    );
+    assert.equal(reg.success, true);
+    assert.equal(reg.statusCode, 201);
+    assert.equal(reg.registration?.status, "confirmed");
+
+    // Cancellation succeeds despite notification failure
+    const cancel = await cancelRegistration(
+      { userId: "user_amit", eventId: "event_tech_fest" },
+      db
+    );
+    assert.equal(cancel.success, true);
+    assert.equal(cancel.statusCode, 200);
+    assert.equal(cancel.registration?.status, "cancelled");
+  } finally {
+    unsubscribe();
+  }
+});
+
+test("FR-009b: Email templates generate valid HTML and escape dangerous characters", () => {
+  // 1. Registration Confirmation Email
+  const conf = registrationConfirmationEmail(
+    "Priya <script>alert(1)</script>",
+    'Tech Fest "2026" & Workshop',
+    "2026-11-10",
+    "10:00 AM",
+    "Main Hall <East>"
+  );
+  assert.match(conf.subject, /Registration Confirmed: Tech Fest "2026" & Workshop/);
+  assert.match(conf.html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.match(conf.html, /Main Hall &lt;East&gt;/);
+  assert.ok(!conf.html.includes("<script>"));
+
+  // 2. Cancellation Email
+  const canc = registrationCancellationEmail("Amit", "Hackathon", "2026-11-15");
+  assert.match(canc.subject, /Registration Cancelled: Hackathon/);
+  assert.match(canc.html, /Your registration for <strong>Hackathon<\/strong> has been cancelled/);
+
+  // 3. Reminder Email
+  const rem = eventReminderEmail(
+    "Rahul",
+    "Coding BootCamp",
+    new Date("2026-11-20"),
+    "09:00 AM",
+    "Lab 4"
+  );
+  assert.match(rem.subject, /Reminder: Coding BootCamp is coming up/);
+  assert.match(rem.html, /09:00 AM/);
+  assert.match(rem.html, /Lab 4/);
+});
+
+test("FR-009b: listRegistrations returns active and waitlisted entries with calculated queue positions and event details", async () => {
+  const db = createMockDb();
+  seedFR008Data(db);
+
+  // Amit is confirmed on event_full_seminar
+  // Priya is waitlist pos 1, Rahul is waitlist pos 2
+  await joinWaitlist({ userId: "user_priya", eventId: "event_full_seminar" }, db);
+  await joinWaitlist({ userId: "user_rahul", eventId: "event_full_seminar" }, db);
+
+  const priyaList = await listRegistrations({ userId: "user_priya" }, db);
+  assert.equal(priyaList.length, 1);
+  assert.equal(priyaList[0].userId, "user_priya");
+  assert.equal(priyaList[0].status, "waitlisted");
+  assert.equal(priyaList[0].waitlistPosition, 1);
+  assert.equal(priyaList[0].event?.name, "Full Seminar");
+
+  const rahulList = await listRegistrations({ userId: "user_rahul" }, db);
+  assert.equal(rahulList.length, 1);
+  assert.equal(rahulList[0].status, "waitlisted");
+  assert.equal(rahulList[0].waitlistPosition, 2);
 });

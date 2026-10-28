@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "tsx --test tests/**/*.test.ts",
+    "test": "NODE_ENV=test tsx --test tests/**/*.test.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "test:fr004a": "ts-node -O \"{\\\"module\\\":\\\"commonjs\\\"}\" -r tsconfig-paths/register scripts/test_fr004a.ts",

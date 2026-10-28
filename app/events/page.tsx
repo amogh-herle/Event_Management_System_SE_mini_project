@@ -24,13 +24,14 @@ import { StoredEvent } from "../api/events/store";
 type ConfirmModal =
   | { type: "cancel"; event: StoredEvent }
   | { type: "delete"; event: StoredEvent }
+  | { type: "cancel_registration"; eventId: string; eventName: string; isWaitlist?: boolean }
   | null;
 
 export default function EventsDirectoryPage() {
   const [events, setEvents] = useState<StoredEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useSessionRole();
-  const [tab, setTab] = useState<"organizer" | "all">("all");
+  const [tab, setTab] = useState<"organizer" | "all" | "registrations">("all");
   const [search, setSearch] = useState("");
   const [confirmModal, setConfirmModal] = useState<ConfirmModal>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -39,6 +40,31 @@ export default function EventsDirectoryPage() {
   const [registeredIds, setRegisteredIds] = useState<Set<string>>(new Set());
   const [waitlistedIds, setWaitlistedIds] = useState<Set<string>>(new Set());
   const [registerErrors, setRegisterErrors] = useState<Record<string, string>>({});
+  const [registrations, setRegistrations] = useState<any[]>([]);
+  const [regLoading, setRegLoading] = useState(false);
+  const [feedbackMsg, setFeedbackMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("tab") === "registrations") {
+        setTab("registrations");
+      }
+    }
+  }, []);
+
+  function loadRegistrations() {
+    setRegLoading(true);
+    fetch("/api/registrations", { headers: { "x-user-role": role } })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.registrations && Array.isArray(data.registrations)) {
+          setRegistrations(data.registrations);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setRegLoading(false));
+  }
 
   function loadEvents() {
     setLoading(true);
@@ -84,10 +110,56 @@ export default function EventsDirectoryPage() {
   }, [role, tab]);
 
   useEffect(() => {
-    loadEvents();
+    if (tab === "registrations") {
+      loadRegistrations();
+    } else {
+      loadEvents();
+    }
     setRegisterErrors({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, role]);
+
+  async function handleSelfCancellation(eventId: string, eventName: string, isWaitlist?: boolean) {
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      const res = await fetch("/api/registrations", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", "x-user-role": role },
+        body: JSON.stringify({ eventId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setActionError(data.error || "Failed to cancel registration");
+        return;
+      }
+      setConfirmModal(null);
+      setFeedbackMsg({
+        type: "success",
+        text: isWaitlist
+          ? `You have left the waitlist for "${eventName}".`
+          : data.promotedRegistration
+          ? `Your registration for "${eventName}" has been cancelled and your seat was given to the next person on the waitlist.`
+          : `Your registration for "${eventName}" has been cancelled. A cancellation confirmation email has been sent.`,
+      });
+      setRegisteredIds((prev) => {
+        const next = new Set(prev);
+        next.delete(eventId);
+        return next;
+      });
+      setWaitlistedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(eventId);
+        return next;
+      });
+      loadEvents();
+      loadRegistrations();
+    } catch {
+      setActionError("Network error. Please try again.");
+    } finally {
+      setActionLoading(false);
+    }
+  }
 
   const filteredEvents = useMemo(() => {
     if (!search.trim()) return events;
@@ -143,7 +215,7 @@ export default function EventsDirectoryPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (res.status === 409) {
-          if (data.status === "waitlisted" || data.error?.toLowerCase().includes("waitlist")) {
+          if (data.registration?.status === "waitlisted" || data.error?.toLowerCase().includes("waitlist")) {
             setWaitlistedIds((prev) => new Set(prev).add(event.id));
           } else {
             setRegisteredIds((prev) => new Set(prev).add(event.id));
@@ -211,12 +283,30 @@ export default function EventsDirectoryPage() {
         <div className="directory-header">
           <div>
             <span className="badge badge-primary">Event Directory</span>
-            <h1>{tab === "organizer" ? "My Organizer Events" : "All Active Events"}</h1>
+            <h1>
+              {tab === "organizer"
+                ? "My Organizer Events"
+                : tab === "registrations"
+                ? "My Registrations"
+                : "All Active Events"}
+            </h1>
             <p className="lede">
               {tab === "organizer"
                 ? "Manage and monitor your published events — cancel or remove events that are no longer needed."
+                : tab === "registrations"
+                ? "Review your confirmed tickets and waitlist positions, or cancel registrations."
                 : "Browse all upcoming active events across clubs, departments, and organizations."}
             </p>
+            {feedbackMsg && (
+              <div
+                className={`alert alert-${feedbackMsg.type === "success" ? "success" : "danger"}`}
+                role="status"
+                style={{ marginTop: "1rem" }}
+              >
+                <CheckIcon size={18} />
+                <span>{feedbackMsg.text}</span>
+              </div>
+            )}
           </div>
 
           {role === "ORGANIZER" && (
@@ -251,6 +341,15 @@ export default function EventsDirectoryPage() {
             >
               All Active Events
             </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "registrations"}
+              onClick={() => setTab("registrations")}
+              className={`tab-btn ${tab === "registrations" ? "active" : ""}`}
+            >
+              My Registrations
+            </button>
           </div>
 
           <div className="search-wrap">
@@ -265,8 +364,143 @@ export default function EventsDirectoryPage() {
           </div>
         </div>
 
-        {/* Event List */}
-        {loading ? (
+        {/* Event List / My Registrations */}
+        {tab === "registrations" ? (
+          regLoading ? (
+            <div className="loading-state">
+              <span className="spinner" /> Loading your registrations...
+            </div>
+          ) : registrations.length === 0 ? (
+            <div className="empty-state-card">
+              <TicketIcon size={44} />
+              <h3>No registrations found</h3>
+              <p>You haven&apos;t registered or joined any waitlists yet.</p>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => setTab("all")}
+              >
+                Browse Active Events
+              </button>
+            </div>
+          ) : (
+            <div className="event-cards-grid">
+              {registrations.map((reg) => {
+                const eventName = reg.event?.name || "Event";
+                const isWaitlisted = reg.status === "waitlisted";
+                const isConfirmed = reg.status === "confirmed";
+                const isCancelled = reg.status === "cancelled";
+                return (
+                  <article
+                    key={reg.id}
+                    className={`event-item-card${isCancelled ? " event-card-cancelled" : ""}`}
+                  >
+                    <div className="card-top-row">
+                      {reg.event?.category && (
+                        <span className="category-pill">
+                          <TagIcon size={12} /> {reg.event.category}
+                        </span>
+                      )}
+                      <span
+                        className={`status-pill ${
+                          isConfirmed
+                            ? "status-active"
+                            : isWaitlisted
+                            ? "status-warning"
+                            : "status-cancelled"
+                        }`}
+                        style={{ textTransform: "capitalize" }}
+                      >
+                        {isConfirmed && <CheckIcon size={12} />}
+                        {isWaitlisted && <ClockIcon size={12} />}
+                        {isWaitlisted
+                          ? `Waitlisted (Queue Pos #${reg.waitlistPosition ?? 1})`
+                          : reg.status}
+                      </span>
+                    </div>
+
+                    <h2 className="card-event-title">
+                      <Link href={`/events/${reg.eventId}`}>{eventName}</Link>
+                    </h2>
+
+                    <div className="card-event-meta">
+                      {reg.event?.date && (
+                        <div className="meta-row">
+                          <CalendarIcon size={15} />
+                          <span>{new Date(reg.event.date).toLocaleDateString()}</span>
+                        </div>
+                      )}
+                      {reg.event?.time && (
+                        <div className="meta-row">
+                          <ClockIcon size={15} />
+                          <span>{reg.event.time}</span>
+                        </div>
+                      )}
+                      {reg.event?.venue && (
+                        <div className="meta-row">
+                          <MapPinIcon size={15} />
+                          <span>{reg.event.venue}</span>
+                        </div>
+                      )}
+                      <div className="meta-row">
+                        <ClockIcon size={15} />
+                        <span>Registered on: {new Date(reg.timestamp || reg.createdAt).toLocaleString()}</span>
+                      </div>
+                    </div>
+
+                    <div className="card-foot">
+                      <Link href={`/events/${reg.eventId}`} className="btn btn-sm btn-ghost">
+                        View Details
+                      </Link>
+
+                      <div className="card-actions">
+                        {isConfirmed && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-danger"
+                            onClick={() => {
+                              setActionError(null);
+                              setConfirmModal({
+                                type: "cancel_registration",
+                                eventId: reg.eventId,
+                                eventName,
+                                isWaitlist: false,
+                              });
+                            }}
+                          >
+                            <XCircleIcon size={14} /> Cancel Registration
+                          </button>
+                        )}
+                        {isWaitlisted && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-danger"
+                            onClick={() => {
+                              setActionError(null);
+                              setConfirmModal({
+                                type: "cancel_registration",
+                                eventId: reg.eventId,
+                                eventName,
+                                isWaitlist: true,
+                              });
+                            }}
+                          >
+                            <XCircleIcon size={14} /> Leave Waitlist
+                          </button>
+                        )}
+                        {isCancelled && (
+                          <span className="btn btn-sm" aria-disabled="true" style={{ opacity: 0.6 }}>
+                            Cancelled
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )
+        ) : loading ? (
           <div className="loading-state">
             <span className="spinner" /> Loading events...
           </div>
@@ -349,21 +583,57 @@ export default function EventsDirectoryPage() {
                   {tab === "all" && event.status === "ACTIVE" && (
                     <div className="card-actions">
                       {registeredIds.has(event.id) ? (
-                        <span
-                          className="btn btn-sm"
-                          aria-live="polite"
-                          style={{ background: "var(--success-soft)", color: "var(--success)" }}
-                        >
-                          <CheckIcon size={14} /> Registered
-                        </span>
+                        <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+                          <span
+                            className="btn btn-sm"
+                            aria-live="polite"
+                            style={{ background: "var(--success-soft)", color: "var(--success)" }}
+                          >
+                            <CheckIcon size={14} /> Registered
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-danger"
+                            onClick={() => {
+                              setActionError(null);
+                              setConfirmModal({
+                                type: "cancel_registration",
+                                eventId: event.id,
+                                eventName: event.name,
+                                isWaitlist: false,
+                              });
+                            }}
+                            aria-label={`Cancel registration for ${event.name}`}
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       ) : waitlistedIds.has(event.id) ? (
-                        <span
-                          className="btn btn-sm"
-                          aria-live="polite"
-                          style={{ background: "var(--warning-soft)", color: "var(--warning)" }}
-                        >
-                          <ClockIcon size={14} /> Waitlisted
-                        </span>
+                        <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+                          <span
+                            className="btn btn-sm"
+                            aria-live="polite"
+                            style={{ background: "var(--warning-soft)", color: "var(--warning)" }}
+                          >
+                            <ClockIcon size={14} /> Waitlisted
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-danger"
+                            onClick={() => {
+                              setActionError(null);
+                              setConfirmModal({
+                                type: "cancel_registration",
+                                eventId: event.id,
+                                eventName: event.name,
+                                isWaitlist: true,
+                              });
+                            }}
+                            aria-label={`Leave waitlist for ${event.name}`}
+                          >
+                            Leave
+                          </button>
+                        </div>
                       ) : event.isFull ? (
                         <button
                           type="button"
@@ -451,7 +721,13 @@ export default function EventsDirectoryPage() {
           }}
         >
           <div className="modal-card">
-            <div className={`modal-icon ${confirmModal.type === "delete" ? "modal-icon-danger" : "modal-icon-warning"}`}>
+            <div
+              className={`modal-icon ${
+                confirmModal.type === "delete" || confirmModal.type === "cancel_registration"
+                  ? "modal-icon-danger"
+                  : "modal-icon-warning"
+              }`}
+            >
               {confirmModal.type === "delete" ? (
                 <TrashIcon size={28} />
               ) : (
@@ -460,13 +736,32 @@ export default function EventsDirectoryPage() {
             </div>
 
             <h2 id="confirm-modal-title" className="modal-title">
-              {confirmModal.type === "cancel"
+              {confirmModal.type === "cancel_registration"
+                ? confirmModal.isWaitlist
+                  ? "Leave Waitlist?"
+                  : "Cancel Registration?"
+                : confirmModal.type === "cancel"
                 ? "Cancel this event?"
                 : "Delete this event?"}
             </h2>
 
             <p className="modal-desc">
-              {confirmModal.type === "cancel" ? (
+              {confirmModal.type === "cancel_registration" ? (
+                confirmModal.isWaitlist ? (
+                  <>
+                    Are you sure you want to leave the waitlist for{" "}
+                    <strong>&quot;{confirmModal.eventName}&quot;</strong>? You will lose your
+                    current queue position.
+                  </>
+                ) : (
+                  <>
+                    Are you sure you want to cancel your registration for{" "}
+                    <strong>&quot;{confirmModal.eventName}&quot;</strong>? Your reserved seat
+                    will be released immediately and a cancellation confirmation email will be
+                    sent to you.
+                  </>
+                )
+              ) : confirmModal.type === "cancel" ? (
                 <>
                   <strong>&quot;{confirmModal.event.name}&quot;</strong> will be marked as{" "}
                   <strong>Cancelled</strong>. It will stop accepting new registrations and will
@@ -490,16 +785,32 @@ export default function EventsDirectoryPage() {
             <div className="modal-actions">
               <button
                 type="button"
-                className={`btn ${confirmModal.type === "delete" ? "btn-danger" : "btn-warning"} btn-md`}
+                className={`btn ${
+                  confirmModal.type === "delete" || confirmModal.type === "cancel_registration"
+                    ? "btn-danger"
+                    : "btn-warning"
+                } btn-md`}
                 disabled={actionLoading}
                 onClick={() =>
-                  confirmModal.type === "cancel"
+                  confirmModal.type === "cancel_registration"
+                    ? handleSelfCancellation(
+                        confirmModal.eventId,
+                        confirmModal.eventName,
+                        confirmModal.isWaitlist
+                      )
+                    : confirmModal.type === "cancel"
                     ? handleCancel(confirmModal.event)
                     : handleDelete(confirmModal.event)
                 }
               >
                 {actionLoading ? (
                   <><span className="spinner" /> Processing...</>
+                ) : confirmModal.type === "cancel_registration" ? (
+                  confirmModal.isWaitlist ? (
+                    <><XCircleIcon size={16} /> Yes, Leave Waitlist</>
+                  ) : (
+                    <><XCircleIcon size={16} /> Yes, Cancel Registration</>
+                  )
                 ) : confirmModal.type === "cancel" ? (
                   <><XCircleIcon size={16} /> Yes, Cancel Event</>
                 ) : (
@@ -512,7 +823,11 @@ export default function EventsDirectoryPage() {
                 disabled={actionLoading}
                 onClick={() => setConfirmModal(null)}
               >
-                Keep Event
+                {confirmModal.type === "cancel_registration"
+                  ? confirmModal.isWaitlist
+                    ? "Keep My Spot"
+                    : "Keep Registration"
+                  : "Keep Event"}
               </button>
             </div>
           </div>
