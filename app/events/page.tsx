@@ -213,7 +213,7 @@ export default function EventsDirectoryPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (res.status === 409) {
-          if (data.status === "waitlisted" || data.error?.toLowerCase().includes("waitlist")) {
+          if (data.registration?.status === "waitlisted" || data.error?.toLowerCase().includes("waitlist")) {
             setWaitlistedIds((prev) => new Set(prev).add(event.id));
           } else {
             setRegisteredIds((prev) => new Set(prev).add(event.id));
