@@ -77,5 +77,7 @@ export async function DELETE(
     success: true,
     message: result.message ?? "Waitlist entry cancelled",
     registration: result.registration,
+    promotedRegistration: result.promotedRegistration,
+    remainingSeats: result.remainingSeats,
   });
 }

@@ -1304,13 +1304,17 @@ export async function cancelRegistration(
         };
       }
 
-      // Seat was freed! Find first waitlisted user in FIFO order (createdAt asc, then id asc)
+      // Seat was freed! Find first NON-SUSPENDED waitlisted user in FIFO order
+      // (createdAt asc, then id asc) — a suspended account must never be
+      // auto-promoted into a confirmed seat, same rule registerForEvent and
+      // joinWaitlist enforce on entry.
       let firstWaitlisted: any = null;
       if (typeof tx.registration?.findFirst === "function") {
         firstWaitlisted = await tx.registration.findFirst({
           where: {
             eventId: event.id,
             status: RegistrationStatus.WAITLISTED,
+            user: { suspended: false },
           },
           orderBy: [
             { createdAt: "asc" },
@@ -1336,17 +1340,18 @@ export async function cancelRegistration(
           if (diff !== 0) return diff;
           return String(a.id).localeCompare(String(b.id));
         });
-        if (waitlisted.length > 0) {
-          const match = waitlisted[0];
+        for (const match of waitlisted) {
           let u = null;
           if (typeof tx.user?.findUnique === "function") {
             u = await tx.user.findUnique({ where: { id: match.userId } });
           }
+          if (u && u.suspended) continue;
           firstWaitlisted = {
             ...match,
             user: u ? { id: u.id, name: u.name, email: u.email } : match.user,
             event: match.event || event,
           };
+          break;
         }
       }
 
