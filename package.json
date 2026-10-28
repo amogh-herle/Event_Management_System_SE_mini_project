@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate",
+    "vercel-build": "prisma db push --accept-data-loss && next build",
     "test": "NODE_ENV=test tsx --test",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
