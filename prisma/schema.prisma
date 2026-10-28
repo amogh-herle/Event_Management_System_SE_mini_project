@@ -94,12 +94,16 @@ model Event {
 }
 
 model Registration {
-  id        String             @id @default(cuid())
-  userId    String
-  eventId   String
-  status    RegistrationStatus @default(CONFIRMED)
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
+  id             String             @id @default(cuid())
+  userId         String
+  eventId        String
+  status         RegistrationStatus @default(CONFIRMED)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  // Set once a reminder email has actually been dispatched for this
+  // registration, so a reminder job re-run within the same window never
+  // re-sends to the same registrant.
+  reminderSentAt DateTime?
 
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)

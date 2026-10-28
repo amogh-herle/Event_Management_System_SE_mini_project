@@ -851,11 +851,23 @@ test("API: POST /api/reminders and GET /api/reminders processes upcoming event r
   const notifications: any[] = [];
   const unsubscribe = onNotification((n) => { notifications.push(n); });
 
+  // Reminders fan out real email to every confirmed registrant, so the
+  // route requires a cron secret or a privileged session — exercise that
+  // real auth path rather than relying on NODE_ENV/missing-config fallbacks.
+  const previousSecret = process.env.CRON_SECRET;
+  process.env.CRON_SECRET = "test-cron-secret";
+
   try {
+    // Unauthenticated calls must be rejected.
+    const unauthed = await remindersRoutePost(
+      new Request("http://localhost:3000/api/reminders", { method: "POST" })
+    );
+    assert.equal(unauthed.status, 401);
+
     // 1. POST /api/reminders
     const reqPost = new Request("http://localhost:3000/api/reminders", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-cron-secret": "test-cron-secret" },
       body: JSON.stringify({ windowHours: 24, referenceDate: baseTime.toISOString() }),
     });
 
@@ -874,7 +886,7 @@ test("API: POST /api/reminders and GET /api/reminders processes upcoming event r
     // 2. GET /api/reminders
     const reqGet = new Request(
       `http://localhost:3000/api/reminders?windowHours=24&referenceDate=${encodeURIComponent(baseTime.toISOString())}`,
-      { method: "GET" }
+      { method: "GET", headers: { "x-cron-secret": "test-cron-secret" } }
     );
     const resGet = await remindersRouteGet(reqGet);
     assert.equal(resGet.status, 200);
@@ -882,5 +894,7 @@ test("API: POST /api/reminders and GET /api/reminders processes upcoming event r
     assert.equal(dataGet.success, true);
   } finally {
     unsubscribe();
+    if (previousSecret === undefined) delete process.env.CRON_SECRET;
+    else process.env.CRON_SECRET = previousSecret;
   }
 });

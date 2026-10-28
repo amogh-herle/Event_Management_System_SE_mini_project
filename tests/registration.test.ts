@@ -1669,6 +1669,47 @@ test("FR-009b: Reminder job ignores cancelled events and cancelled registrations
   }
 });
 
+test("FR-009b: Reminder job does not re-send to a registrant already reminded in a prior run", async () => {
+  const db = createMockDb();
+  seedData(db);
+
+  const baseTime = new Date("2026-10-28T10:00:00Z");
+  const eventTime = new Date(baseTime.getTime() + 12 * 60 * 60 * 1000);
+
+  db.events.set("evt_remind_dedupe", {
+    id: "evt_remind_dedupe",
+    name: "Repeat Reminder Check",
+    date: eventTime,
+    time: "09:00 PM",
+    venue: "Hall B",
+    category: "Tech",
+    capacity: 10,
+    status: EventStatus.ACTIVE,
+    isCancelled: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  await registerForEvent({ userId: "user_amit", eventId: "evt_remind_dedupe" }, db);
+
+  const dispatched: any[] = [];
+  const unsubscribe = onNotification((n) => { dispatched.push(n); });
+
+  try {
+    // A cron job calling this hourly with a 24h window would otherwise
+    // re-send the same reminder on every single invocation.
+    const first = await sendEventReminders({ windowHours: 24, referenceDate: baseTime }, db);
+    assert.equal(first.remindersSent, 1);
+
+    const second = await sendEventReminders({ windowHours: 24, referenceDate: baseTime }, db);
+    assert.equal(second.remindersSent, 0, "a second run within the same window must not re-send");
+
+    assert.equal(dispatched.filter((n) => n.type === "EVENT_REMINDER").length, 1);
+  } finally {
+    unsubscribe();
+  }
+});
+
 test("FR-009b: Waitlist cancellation dispatches cancellation confirmation to waitlisted user", async () => {
   const db = createMockDb();
   seedFR008Data(db);
