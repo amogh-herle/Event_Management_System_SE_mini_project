@@ -84,8 +84,7 @@ jobs:
           npx tsx --test --experimental-test-coverage \
             --test-coverage-exclude='tests/**' \
             --test-coverage-exclude='scripts/**' \
-            --test-coverage-lines=80 \
-            tests/**/*.test.ts
+            --test-coverage-lines=80
 
       - name: Build production bundle
         run: npm run build
