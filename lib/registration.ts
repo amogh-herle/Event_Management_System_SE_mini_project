@@ -535,6 +535,7 @@ export async function sendEventReminders(
           registrations: {
             where: {
               status: RegistrationStatus.CONFIRMED,
+              reminderSentAt: null,
             },
             include: {
               user: { select: { id: true, name: true, email: true } },
@@ -597,6 +598,7 @@ export async function sendEventReminders(
             where: {
               eventId: evt.id,
               status: RegistrationStatus.CONFIRMED,
+              reminderSentAt: null,
             },
             include: {
               user: { select: { id: true, name: true, email: true } },
@@ -616,9 +618,15 @@ export async function sendEventReminders(
     }
 
     if (Array.isArray(confirmedRegs)) {
-      for (const reg of confirmedRegs) {
-        if (reg.status !== RegistrationStatus.CONFIRMED && reg.status !== "CONFIRMED") continue;
+      // Defensive re-filter: a fallback query path (or a test mock) may not
+      // honor the reminderSentAt/status where clauses above, so never rely
+      // on the query alone to prevent a duplicate send.
+      confirmedRegs = confirmedRegs.filter(
+        (r: any) =>
+          (r.status === RegistrationStatus.CONFIRMED || r.status === "CONFIRMED") && !r.reminderSentAt
+      );
 
+      for (const reg of confirmedRegs) {
         let u = reg.user;
         if (!u && reg.userId) {
           if (typeof db.user?.findUnique === "function") {
@@ -629,7 +637,7 @@ export async function sendEventReminders(
         }
 
         if (u?.email) {
-          await sendEventReminderNotification(
+          const sent = await sendEventReminderNotification(
             {
               userId: reg.userId,
               eventId: evt.id,
@@ -643,6 +651,9 @@ export async function sendEventReminders(
             },
             db
           );
+
+          if (!sent) continue;
+
           remindersSent++;
           notifications.push({
             userId: reg.userId,
@@ -652,6 +663,20 @@ export async function sendEventReminders(
             eventDate: evt.date,
             eventTime: evt.time,
           });
+
+          if (reg.id && typeof db.registration?.update === "function") {
+            try {
+              await db.registration.update({
+                where: { id: reg.id },
+                data: { reminderSentAt: new Date() },
+              });
+            } catch (err) {
+              console.error(
+                `[reminders] failed to mark registration ${reg.id} as reminded:`,
+                err
+              );
+            }
+          }
         }
       }
     }
@@ -764,7 +789,14 @@ export async function registerForEvent(
 
   const normalizedEventId = eventId.trim();
 
-  return withEventLock(normalizedEventId, () =>
+  // Captured by the transaction body below and dispatched only after the
+  // transaction has committed and the event lock has released — sending
+  // mail while either is still held stalls every other request for this
+  // event on the SMTP round-trip, and a P2034 retry would otherwise re-run
+  // (and re-send) it.
+  const notifyBox: { current: (() => Promise<boolean>) | null } = { current: null };
+
+  const result = await withEventLock(normalizedEventId, () =>
     withSerializableTransaction(db, async (tx) => {
       // 2. Validate Event
       const event = await tx.event.findUnique({
@@ -939,8 +971,9 @@ export async function registerForEvent(
               },
             });
 
-        // Send registration confirmation notification and email (FR-009b / UC-05 Step 7 / IT_02)
-        await sendRegistrationNotification(saved, tx);
+        // Dispatch registration confirmation notification/email after commit
+        // (FR-009b / UC-05 Step 7 / IT_02)
+        notifyBox.current = () => sendRegistrationNotification(saved, db);
 
         return {
           success: true,
@@ -965,6 +998,16 @@ export async function registerForEvent(
       }
     })
   );
+
+  if (result.success && notifyBox.current) {
+    try {
+      await notifyBox.current();
+    } catch (err) {
+      console.error("[registration] post-commit notification dispatch failed:", err);
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -1235,8 +1278,17 @@ export async function cancelRegistration(
 
   const normalizedEventId = eventId.trim();
 
-  return withEventLock(normalizedEventId, () =>
+  // See registerForEvent: dispatched only after commit + lock release so
+  // mail latency never holds the transaction/lock open, and a P2034 retry
+  // can't cause a double-send.
+  const notifications: Array<() => Promise<boolean>> = [];
+
+  const result = await withEventLock(normalizedEventId, () =>
     withSerializableTransaction(db, async (tx) => {
+      // Reset on every attempt — a P2034 retry re-runs this whole callback,
+      // and we only want the winning attempt's notifications queued.
+      notifications.length = 0;
+
       const event = await tx.event.findUnique({
         where: { id: normalizedEventId },
         select: { id: true, name: true, date: true, status: true, capacity: true },
@@ -1295,7 +1347,7 @@ export async function cancelRegistration(
       });
 
       if (wasWaitlisted) {
-        await sendCancellationNotification(cancelled, tx);
+        notifications.push(() => sendCancellationNotification(cancelled, db));
         return {
           success: true,
           statusCode: 200,
@@ -1368,11 +1420,10 @@ export async function cancelRegistration(
           },
         });
 
-        // Notify promoted user immediately
-        await sendWaitlistPromotionNotification(promoted, tx);
-
-        // Notify cancelling user immediately (FR-009b / UC-07 Step 7)
-        await sendCancellationNotification(cancelled, tx);
+        // Notify the promoted user and the cancelling user (FR-009b / UC-07
+        // Step 7) after commit — see the comment above `notifications`.
+        notifications.push(() => sendWaitlistPromotionNotification(promoted, db));
+        notifications.push(() => sendCancellationNotification(cancelled, db));
 
         return {
           success: true,
@@ -1407,8 +1458,8 @@ export async function cancelRegistration(
       }
       const remainingSeats = Math.max(0, eventCapacity - confirmedCount);
 
-      // Notify cancelling user immediately (FR-009b / UC-07 Step 7)
-      await sendCancellationNotification(cancelled, tx);
+      // Notify cancelling user after commit (FR-009b / UC-07 Step 7)
+      notifications.push(() => sendCancellationNotification(cancelled, db));
 
       return {
         success: true,
@@ -1419,6 +1470,18 @@ export async function cancelRegistration(
       };
     })
   );
+
+  if (result.success && notifications.length > 0) {
+    for (const notify of notifications) {
+      try {
+        await notify();
+      } catch (err) {
+        console.error("[registration] post-commit notification dispatch failed:", err);
+      }
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -1619,7 +1682,12 @@ export async function listRegistrations(
       if (isWaitlisted) {
         try {
           pos = await calculateWaitlistPosition(r.userId, r.eventId, r.createdAt, db);
-        } catch {}
+        } catch (err) {
+          console.error(
+            `[registration] failed to compute waitlist position for user ${r.userId} on event ${r.eventId}:`,
+            err
+          );
+        }
       }
       const formatted = formatRegistration(r);
       if (pos !== undefined) {

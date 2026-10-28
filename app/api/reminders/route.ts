@@ -3,19 +3,27 @@ import { Role } from "@prisma/client";
 import { getAuthUserFromRequest } from "@/lib/auth";
 import { sendEventReminders } from "@/lib/registration";
 
-export async function POST(request: Request) {
-  const sessionUser = await getAuthUserFromRequest(request);
+// Triggering this fans out a real email to every confirmed registrant of
+// every event in the window, so it must never be reachable without one of:
+// a matching cron secret or a signed-in ADMIN/ORGANIZER session. Unlike the
+// previous version, a missing CRON_SECRET env var (a deploy omission) no
+// longer silently falls back to "allow everyone" — that fails closed
+// instead, and tests exercise this same real check rather than a
+// NODE_ENV-based bypass.
+async function isAuthorized(request: Request): Promise<boolean> {
   const cronSecret = request.headers.get("x-cron-secret");
-  const isAuthorizedCron =
-    process.env.CRON_SECRET && cronSecret && cronSecret === process.env.CRON_SECRET;
+  if (process.env.CRON_SECRET && cronSecret === process.env.CRON_SECRET) {
+    return true;
+  }
 
-  const isPrivilegedUser =
-    sessionUser && (sessionUser.role === Role.ADMIN || sessionUser.role === Role.ORGANIZER);
+  const sessionUser = await getAuthUserFromRequest(request);
+  return Boolean(
+    sessionUser && (sessionUser.role === Role.ADMIN || sessionUser.role === Role.ORGANIZER)
+  );
+}
 
-  const isDevOrTest =
-    process.env.NODE_ENV === "test" || (!process.env.CRON_SECRET && !sessionUser);
-
-  if (!sessionUser && !isAuthorizedCron && !isDevOrTest) {
+export async function POST(request: Request) {
+  if (!(await isAuthorized(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -35,6 +43,10 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
+  if (!(await isAuthorized(request))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const windowHours = searchParams.get("windowHours")
     ? Number(searchParams.get("windowHours"))

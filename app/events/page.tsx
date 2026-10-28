@@ -138,6 +138,8 @@ export default function EventsDirectoryPage() {
         type: "success",
         text: isWaitlist
           ? `You have left the waitlist for "${eventName}".`
+          : data.promotedRegistration
+          ? `Your registration for "${eventName}" has been cancelled and your seat was given to the next person on the waitlist.`
           : `Your registration for "${eventName}" has been cancelled. A cancellation confirmation email has been sent.`,
       });
       setRegisteredIds((prev) => {
