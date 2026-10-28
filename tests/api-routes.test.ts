@@ -16,12 +16,17 @@ import {
   DELETE as waitlistRouteDelete,
 } from "../app/api/events/[id]/waitlist/route";
 import {
+  POST as remindersRoutePost,
+  GET as remindersRouteGet,
+} from "../app/api/reminders/route";
+import {
   DUPLICATE_REGISTRATION_ERROR,
   EVENT_CANCELLED_ERROR,
   EVENT_NOT_FOUND_ERROR,
   AUTH_REQUIRED_ERROR,
   EVENT_FULL_ERROR,
   ALREADY_WAITLISTED_ERROR,
+  onNotification,
   onWaitlistNotification,
 } from "../lib/registration";
 import { prisma } from "../lib/prisma";
@@ -135,6 +140,14 @@ function createMockDb() {
     event: {
       async findUnique({ where }: any) {
         return events.get(where.id) || null;
+      },
+      async findMany({ where }: any = {}) {
+        return Array.from(events.values()).filter((e) => {
+          if (where?.status && e.status !== where.status) return false;
+          if (where?.date?.gte && new Date(e.date).getTime() < new Date(where.date.gte).getTime()) return false;
+          if (where?.date?.lte && new Date(e.date).getTime() > new Date(where.date.lte).getTime()) return false;
+          return true;
+        });
       },
     },
 
@@ -693,4 +706,181 @@ test("API: POST /api/registrations with waitlist: true joins waitlist when event
   const data = await res.json();
   assert.equal(data.status, "waitlisted");
   assert.equal(data.waitlistPosition, 1);
+});
+
+test("API: POST /api/events/[id]/register sends confirmation notification to registered participant", async () => {
+  const notifications: any[] = [];
+  const unsubscribe = onNotification((n) => { notifications.push(n); });
+
+  try {
+    const req = new Request("http://localhost:3000/api/events/evt1/register", {
+      method: "POST",
+      headers: sessionCookieFor("u1"),
+    });
+
+    const res = await registerEventRoutePost(req, { params: { id: "evt1" } });
+    assert.equal(res.status, 201);
+
+    const confNotif = notifications.find(
+      (n) => n.type === "REGISTRATION_CONFIRMATION" && n.userId === "u1"
+    );
+    assert.ok(confNotif, "Registration confirmation notification must be dispatched");
+    assert.equal(confNotif.to, "amit.rao@test.com");
+    assert.match(confNotif.subject, /Registration Confirmed: Tech Fest/);
+  } finally {
+    unsubscribe();
+  }
+});
+
+test("API: DELETE /api/events/[id]/register sends cancellation notification to participant", async () => {
+  // First register u2
+  await registerEventRoutePost(
+    new Request("http://localhost:3000/api/events/evt1/register", {
+      method: "POST",
+      headers: sessionCookieFor("u2"),
+    }),
+    { params: { id: "evt1" } }
+  );
+
+  const notifications: any[] = [];
+  const unsubscribe = onNotification((n) => { notifications.push(n); });
+
+  try {
+    const reqDel = new Request("http://localhost:3000/api/events/evt1/register", {
+      method: "DELETE",
+      headers: sessionCookieFor("u2"),
+    });
+
+    const resDel = await registerEventRouteDelete(reqDel, { params: { id: "evt1" } });
+    assert.equal(resDel.status, 200);
+
+    const cancelNotif = notifications.find(
+      (n) => n.type === "CANCELLATION_CONFIRMATION" && n.userId === "u2"
+    );
+    assert.ok(cancelNotif, "Cancellation notification must be dispatched to cancelling participant");
+    assert.equal(cancelNotif.to, "priya.nair@test.com");
+    assert.match(cancelNotif.subject, /Registration Cancelled: Tech Fest/);
+  } finally {
+    unsubscribe();
+  }
+});
+
+test("API: DELETE /api/registrations sends cancellation notification to participant", async () => {
+  // Register u1
+  await registrationsRoutePost(
+    new Request("http://localhost:3000/api/registrations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sessionCookieFor("u1") },
+      body: JSON.stringify({ eventId: "evt1" }),
+    })
+  );
+
+  const notifications: any[] = [];
+  const unsubscribe = onNotification((n) => { notifications.push(n); });
+
+  try {
+    const reqDel = new Request("http://localhost:3000/api/registrations?eventId=evt1", {
+      method: "DELETE",
+      headers: sessionCookieFor("u1"),
+    });
+
+    const resDel = await registrationsRouteDelete(reqDel);
+    assert.equal(resDel.status, 200);
+
+    const cancelNotif = notifications.find(
+      (n) => n.type === "CANCELLATION_CONFIRMATION" && n.userId === "u1"
+    );
+    assert.ok(cancelNotif, "Cancellation notification must be dispatched via /api/registrations DELETE");
+    assert.equal(cancelNotif.to, "amit.rao@test.com");
+  } finally {
+    unsubscribe();
+  }
+});
+
+test("API: GET /api/registrations returns registrations list for current participant", async () => {
+  // Register u1 for evt1
+  await registrationsRoutePost(
+    new Request("http://localhost:3000/api/registrations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sessionCookieFor("u1") },
+      body: JSON.stringify({ eventId: "evt1" }),
+    })
+  );
+
+  const req = new Request("http://localhost:3000/api/registrations", {
+    method: "GET",
+    headers: sessionCookieFor("u1"),
+  });
+
+  const res = await registrationsRouteGet(req);
+  assert.equal(res.status, 200);
+  const data = await res.json();
+  assert.ok(Array.isArray(data.registrations));
+  assert.ok(data.registrations.some((r: any) => r.eventId === "evt1" && r.status === "confirmed"));
+});
+
+test("API: POST /api/reminders and GET /api/reminders processes upcoming event reminders", async () => {
+  const baseTime = new Date("2026-10-28T10:00:00Z");
+  const eventTime = new Date(baseTime.getTime() + 12 * 60 * 60 * 1000); // starts in 12 hours
+
+  // Add event in window
+  mockDb.events.set("evt_remind_api", {
+    id: "evt_remind_api",
+    name: "API Innovation Workshop",
+    title: "API Innovation Workshop",
+    date: eventTime,
+    time: "10:00 PM",
+    venue: "Lab A",
+    category: "Tech",
+    capacity: 20,
+    status: EventStatus.ACTIVE,
+    isCancelled: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  // u2 registers
+  await registerEventRoutePost(
+    new Request("http://localhost:3000/api/events/evt_remind_api/register", {
+      method: "POST",
+      headers: sessionCookieFor("u2"),
+    }),
+    { params: { id: "evt_remind_api" } }
+  );
+
+  const notifications: any[] = [];
+  const unsubscribe = onNotification((n) => { notifications.push(n); });
+
+  try {
+    // 1. POST /api/reminders
+    const reqPost = new Request("http://localhost:3000/api/reminders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ windowHours: 24, referenceDate: baseTime.toISOString() }),
+    });
+
+    const resPost = await remindersRoutePost(reqPost);
+    assert.equal(resPost.status, 200);
+    const dataPost = await resPost.json();
+    assert.equal(dataPost.success, true);
+    assert.ok(dataPost.remindersSent >= 1);
+
+    const reminder = notifications.find(
+      (n) => n.type === "EVENT_REMINDER" && n.userId === "u2" && n.eventId === "evt_remind_api"
+    );
+    assert.ok(reminder, "Reminder must be dispatched via POST /api/reminders");
+    assert.equal(reminder.to, "priya.nair@test.com");
+
+    // 2. GET /api/reminders
+    const reqGet = new Request(
+      `http://localhost:3000/api/reminders?windowHours=24&referenceDate=${encodeURIComponent(baseTime.toISOString())}`,
+      { method: "GET" }
+    );
+    const resGet = await remindersRouteGet(reqGet);
+    assert.equal(resGet.status, 200);
+    const dataGet = await resGet.json();
+    assert.equal(dataGet.success, true);
+  } finally {
+    unsubscribe();
+  }
 });
