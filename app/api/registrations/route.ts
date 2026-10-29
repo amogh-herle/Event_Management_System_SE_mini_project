@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { Role } from "@prisma/client";
 import { registerEventSchema } from "@/lib/validation";
+import { prisma } from "@/lib/prisma";
 import {
   registerForEvent,
   cancelRegistration,
   listRegistrations,
+  getEventCapacity,
+  getEventParticipantReport,
+  exportParticipantsToCSV,
+  exportParticipantsToPDF,
   AUTH_REQUIRED_ERROR,
 } from "@/lib/registration";
 import { getAuthUserFromRequest, ensureDemoUserRow } from "@/lib/auth";
@@ -68,11 +73,30 @@ export async function GET(request: Request) {
 
   const eventId = searchParams.get("eventId") || undefined;
   const status = searchParams.get("status") || undefined;
+  const format = searchParams.get("format")?.toLowerCase();
 
   // Organizers/admins may list every registration for an event they're
   // looking up (the attendee roster); everyone else can only ever see their
   // own registrations — a caller-supplied userId is never trusted.
   const isPrivileged = sessionUser.role === Role.ORGANIZER || sessionUser.role === Role.ADMIN;
+
+  if (eventId && sessionUser.role === Role.ORGANIZER) {
+    try {
+      const event = await prisma.event.findUnique({
+        where: { id: eventId },
+        select: { id: true, organizerId: true },
+      });
+      if (event && event.organizerId !== sessionUser.id) {
+        return NextResponse.json(
+          { error: "Access denied: You are not the organizer of this event" },
+          { status: 403 }
+        );
+      }
+    } catch {
+      // In-memory or offline DB fallback
+    }
+  }
+
   const userId = isPrivileged && eventId ? undefined : sessionUser.id;
 
   if (!userId && !eventId) {
@@ -82,8 +106,58 @@ export async function GET(request: Request) {
     );
   }
 
+  if (eventId && (format === "csv" || format === "pdf")) {
+    const report = await getEventParticipantReport(eventId, prisma);
+    if (!report) {
+      return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    }
+    const safeTitle = (report.event.name || "event")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+
+    if (format === "pdf") {
+      const pdfBuffer = exportParticipantsToPDF(report.participants, report.event);
+      return new NextResponse(new Uint8Array(pdfBuffer), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="participants-${safeTitle}.pdf"`,
+          "Cache-Control": "no-store",
+        },
+      });
+    }
+
+    const csvString = exportParticipantsToCSV(report.participants, report.event);
+    return new NextResponse(csvString, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="participants-${safeTitle}.csv"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
   const registrations = await listRegistrations({ userId, eventId, status });
-  return NextResponse.json({ registrations });
+  let capacityInfo = null;
+  if (eventId) {
+    try {
+      capacityInfo = await getEventCapacity(eventId, prisma);
+    } catch {}
+  }
+
+  return NextResponse.json({
+    registrations,
+    ...(capacityInfo ? {
+      capacity: capacityInfo.capacity,
+      confirmedCount: capacityInfo.confirmedCount,
+      remainingSeats: capacityInfo.remainingSeats,
+      availableSeats: capacityInfo.availableSeats,
+      waitlistCount: capacityInfo.waitlistCount,
+      isFull: capacityInfo.isFull,
+    } : {}),
+  });
 }
 
 export async function DELETE(request: Request) {

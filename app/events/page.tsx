@@ -43,6 +43,27 @@ export default function EventsDirectoryPage() {
   const [registrations, setRegistrations] = useState<any[]>([]);
   const [regLoading, setRegLoading] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [registrantsModalEvent, setRegistrantsModalEvent] = useState<StoredEvent | null>(null);
+  const [modalRegistrants, setModalRegistrants] = useState<any[]>([]);
+  const [modalLoading, setModalLoading] = useState(false);
+
+  function openRegistrantsModal(evt: StoredEvent) {
+    setRegistrantsModalEvent(evt);
+    setModalLoading(true);
+    fetch(`/api/events/${evt.id}/export?format=json`, {
+      headers: { "x-user-role": role },
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.participants && Array.isArray(data.participants)) {
+          setModalRegistrants(data.participants);
+        } else {
+          setModalRegistrants([]);
+        }
+      })
+      .catch(() => setModalRegistrants([]))
+      .finally(() => setModalLoading(false));
+  }
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -560,10 +581,14 @@ export default function EventsDirectoryPage() {
                         <>
                           {" "}
                           —{" "}
+                          <span>
+                            <strong>{event.confirmedCount ?? (event.capacity - event.remainingSeats)}</strong> registered
+                          </span>
+                          {" · "}
                           {event.isFull ? (
-                            <strong style={{ color: "var(--danger)" }}>Full</strong>
+                            <strong style={{ color: "var(--danger)" }}>0 available (Full)</strong>
                           ) : (
-                            <strong>{event.remainingSeats} left</strong>
+                            <strong>{event.remainingSeats} available</strong>
                           )}
                           {event.waitlistCount !== undefined && event.waitlistCount > 0 && (
                             <span style={{ color: "var(--text-muted)" }}> ({event.waitlistCount} waitlisted)</span>
@@ -673,9 +698,17 @@ export default function EventsDirectoryPage() {
                     </p>
                   )}
 
-                  {/* FR-005a: Cancel / Delete actions — only for owning organizer */}
+                  {/* FR-005a & FR-010a: Organizer actions — View Registrants & Cancel/Delete */}
                   {role === "ORGANIZER" && tab === "organizer" && (
                     <div className="card-actions">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-primary"
+                        onClick={() => openRegistrantsModal(event)}
+                        aria-label={`View registrants for ${event.name}`}
+                      >
+                        <UsersIcon size={14} /> View Registrants
+                      </button>
                       {event.status === "ACTIVE" && (
                         <button
                           type="button"
@@ -828,6 +861,123 @@ export default function EventsDirectoryPage() {
                     ? "Keep My Spot"
                     : "Keep Registration"
                   : "Keep Event"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── View Registrants Modal (FR-010a) ─────────────────────────────── */}
+      {registrantsModalEvent && (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="registrants-modal-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setRegistrantsModalEvent(null);
+          }}
+        >
+          <div className="modal-card" style={{ maxWidth: "800px", width: "95%" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1rem" }}>
+              <div>
+                <span className="badge badge-primary">Attendee Roster</span>
+                <h2 id="registrants-modal-title" className="modal-title" style={{ marginTop: "0.25rem", textAlign: "left" }}>
+                  {registrantsModalEvent.name}
+                </h2>
+                <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
+                  Registered: <strong>{registrantsModalEvent.confirmedCount ?? (registrantsModalEvent.capacity - (registrantsModalEvent.remainingSeats ?? 0))}</strong>
+                  {" · "}Available: <strong>{registrantsModalEvent.remainingSeats ?? 0}</strong>
+                  {" · "}Capacity: <strong>{registrantsModalEvent.capacity}</strong>
+                  {registrantsModalEvent.waitlistCount ? ` · Waitlisted: ${registrantsModalEvent.waitlistCount}` : ""}
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <a
+                  href={`/api/events/${registrantsModalEvent.id}/export?format=csv`}
+                  className="btn btn-sm btn-primary"
+                  download
+                >
+                  Export CSV
+                </a>
+                <a
+                  href={`/api/events/${registrantsModalEvent.id}/export?format=pdf`}
+                  className="btn btn-sm btn-primary"
+                  download
+                >
+                  Export PDF
+                </a>
+              </div>
+            </div>
+
+            {modalLoading ? (
+              <div className="loading-state" style={{ padding: "2rem" }}>
+                <span className="spinner" /> Loading registrants...
+              </div>
+            ) : modalRegistrants.length === 0 ? (
+              <div style={{ padding: "2rem", textAlign: "center", color: "var(--text-muted)" }}>
+                <UsersIcon size={36} />
+                <p style={{ marginTop: "0.5rem" }}>No participants registered for this event yet.</p>
+              </div>
+            ) : (
+              <div style={{ maxHeight: "350px", overflowY: "auto", border: "1px solid var(--border)", borderRadius: "var(--radius)" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.85rem" }}>
+                  <thead style={{ background: "var(--surface-2)", position: "sticky", top: 0 }}>
+                    <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                      <th style={{ padding: "0.5rem" }}>#</th>
+                      <th style={{ padding: "0.5rem" }}>Name</th>
+                      <th style={{ padding: "0.5rem" }}>Email</th>
+                      <th style={{ padding: "0.5rem" }}>Status</th>
+                      <th style={{ padding: "0.5rem" }}>Registered At</th>
+                      <th style={{ padding: "0.5rem" }}>Waitlist Pos</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {modalRegistrants.map((p, idx) => (
+                      <tr key={p.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                        <td style={{ padding: "0.5rem", color: "var(--text-muted)" }}>{idx + 1}</td>
+                        <td style={{ padding: "0.5rem", fontWeight: 600 }}>{p.name}</td>
+                        <td style={{ padding: "0.5rem", color: "var(--text-muted)" }}>{p.email}</td>
+                        <td style={{ padding: "0.5rem" }}>
+                          <span
+                            className={`status-pill ${
+                              p.status?.toLowerCase() === "confirmed"
+                                ? "status-active"
+                                : p.status?.toLowerCase() === "waitlisted"
+                                ? "status-warning"
+                                : "status-cancelled"
+                            }`}
+                            style={{ textTransform: "capitalize", fontSize: "0.75rem" }}
+                          >
+                            {p.status}
+                          </span>
+                        </td>
+                        <td style={{ padding: "0.5rem", color: "var(--text-muted)" }}>
+                          {new Date(p.registeredAt).toLocaleDateString()}
+                        </td>
+                        <td style={{ padding: "0.5rem", color: "var(--text-muted)" }}>
+                          {p.waitlistPosition ? `#${p.waitlistPosition}` : "-"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="modal-actions" style={{ marginTop: "1.25rem", justifyContent: "space-between" }}>
+              <Link
+                href={`/events/${registrantsModalEvent.id}/registrants`}
+                className="btn btn-ghost btn-sm"
+              >
+                Open Full Management Page →
+              </Link>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setRegistrantsModalEvent(null)}
+              >
+                Close
               </button>
             </div>
           </div>
