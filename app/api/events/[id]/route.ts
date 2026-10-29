@@ -7,6 +7,7 @@ import { StoredEvent, inMemoryEvents } from "@/app/api/events/store";
 import {
   getEventCapacity,
   updateEventDetails,
+  cancelEvent,
   notifyEventParticipants,
   type NotifyEventParticipantsParams,
   type NotifyEventParticipantsResult,
@@ -130,45 +131,13 @@ export async function PATCH(
 
   // ── Database path ──────────────────────────────────────────────────────────
   try {
-    const event = await prisma.event.findUnique({ where: { id } });
+    const result = await cancelEvent({ eventId: id, organizerId: auth.user.id });
 
-    if (!event) {
-      return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    if (!result.success || !result.event) {
+      return NextResponse.json({ error: result.error }, { status: result.statusCode });
     }
 
-    // Only the owning organizer may cancel (AC: FR-005a ownership guard)
-    if (event.organizerId !== auth.user.id) {
-      return NextResponse.json(
-        { error: "Forbidden: you are not the organizer of this event" },
-        { status: 403 }
-      );
-    }
-
-    if (event.status === "CANCELLED") {
-      return NextResponse.json(
-        { error: "Event is already cancelled" },
-        { status: 409 }
-      );
-    }
-
-    // Only matches while still ACTIVE, so two concurrent cancel requests
-    // can't both succeed (and both notify participants) — FR-005b.
-    let updated;
-    try {
-      updated = await prisma.event.update({
-        where: { id, status: "ACTIVE" },
-        data: { status: "CANCELLED" },
-        include: { organizer: { select: { id: true, name: true, email: true } } },
-      });
-    } catch (updateErr) {
-      if (updateErr instanceof Prisma.PrismaClientKnownRequestError && updateErr.code === "P2025") {
-        return NextResponse.json(
-          { error: "Event is already cancelled" },
-          { status: 409 }
-        );
-      }
-      throw updateErr;
-    }
+    const updated = result.event;
 
     // Mirror to in-memory store
     const idx = inMemoryEvents.findIndex((e) => e.id === id);
@@ -336,6 +305,10 @@ export async function PUT(
       kind: "UPDATE",
       event: updated,
       changes: result.changes ?? [],
+      // Anyone this same edit already promoted off the waitlist gets a
+      // WAITLIST_PROMOTION email, not a second, misleading "unchanged"
+      // EVENT_UPDATE one.
+      excludeUserIds: result.promotedUserIds ?? [],
     });
 
     return NextResponse.json({

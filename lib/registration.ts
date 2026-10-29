@@ -106,6 +106,11 @@ export interface UpdateEventResult {
     updatedAt: Date;
   };
   promotedCount?: number;
+  // Users promoted off the waitlist by this same edit (capacity increase)
+  // already get a WAITLIST_PROMOTION email — see notifyEventParticipants's
+  // excludeUserIds, which keeps them from also getting a confusing
+  // EVENT_UPDATE email claiming their registration is unchanged.
+  promotedUserIds?: string[];
   changes?: EventChange[];
 }
 
@@ -610,8 +615,13 @@ export interface NotifyEventParticipantsParams {
     date?: Date | string;
     time?: string;
     venue?: string;
+    organizerId?: string;
   };
   changes?: EventChange[];
+  // Users to skip entirely — e.g. ones already emailed a WAITLIST_PROMOTION
+  // notice by the same request, who shouldn't also get a confusing
+  // EVENT_UPDATE email claiming their registration is unchanged.
+  excludeUserIds?: string[];
 }
 
 /**
@@ -640,6 +650,7 @@ export async function notifyEventParticipants(
 ): Promise<NotifyEventParticipantsResult> {
   const { kind, event } = params;
   const changes = params.changes ?? [];
+  const excludeUserIds = new Set(params.excludeUserIds ?? []);
   const result: NotifyEventParticipantsResult = { recipients: 0, sent: 0, failed: 0 };
 
   if (kind === "UPDATE" && changes.length === 0) return result;
@@ -663,10 +674,15 @@ export async function notifyEventParticipants(
   }
 
   // Defensive re-filter: a fallback query path (or a test mock) may not
-  // honor the where clause above.
+  // honor the where clause above. Also excludes the organizer themself
+  // (holding a registration on their own event is possible — nothing
+  // stops it server-side) and anyone already notified of a promotion by
+  // this same request.
   const active = regs.filter(
     (r: any) =>
       r.eventId === event.id &&
+      r.userId !== event.organizerId &&
+      !excludeUserIds.has(r.userId) &&
       (r.status === RegistrationStatus.CONFIRMED ||
         r.status === "CONFIRMED" ||
         r.status === RegistrationStatus.WAITLISTED ||
@@ -1862,6 +1878,7 @@ export async function updateEventDetails(
       });
 
       let promotedCount = 0;
+      const promotedUserIds: string[] = [];
       const newCapacity = typeof updated.capacity === "number" ? updated.capacity : 0;
       let openSeats = newCapacity - confirmedCount;
 
@@ -1919,6 +1936,7 @@ export async function updateEventDetails(
 
         notifications.push(() => sendWaitlistPromotionNotification(promoted, db));
         promotedCount++;
+        promotedUserIds.push(promoted.userId);
         openSeats--;
       }
 
@@ -1942,6 +1960,7 @@ export async function updateEventDetails(
           updatedAt: updated.updatedAt,
         },
         promotedCount,
+        promotedUserIds,
         // FR-005b: computed from the exact before/after rows this
         // transaction committed, rather than a separate pre-fetch outside
         // the lock, which a P2034 retry (or a concurrent edit) could skew.
@@ -1961,6 +1980,79 @@ export async function updateEventDetails(
   }
 
   return result;
+}
+
+export interface CancelEventResult {
+  success: boolean;
+  statusCode: number;
+  error?: string;
+  event?: {
+    id: string;
+    name: string;
+    date: Date;
+    time: string;
+    venue: string;
+    status: EventStatus | string;
+    organizerId: string;
+    updatedAt: Date;
+  };
+}
+
+/**
+ * Cancel an event (FR-005a). Locked and transactional like
+ * updateEventDetails/registerForEvent/cancelRegistration — a bare
+ * `UPDATE ... WHERE status = 'ACTIVE'` is enough to stop two concurrent
+ * cancels from both succeeding, but it's the only event-mutating path in
+ * this file that didn't take the app-level lock, leaving it the one place
+ * a concurrent registerForEvent call could land outside the serialization
+ * every other path gets. The transaction's own read of event.status is
+ * what FR-005b's "notify only once, only after commit" guarantee relies
+ * on, same as everywhere else in this file.
+ */
+export async function cancelEvent(
+  params: { eventId: string; organizerId: string },
+  db: PrismaClientLike = prisma
+): Promise<CancelEventResult> {
+  const { eventId, organizerId } = params;
+  const normalizedEventId = eventId.trim();
+
+  return withEventLock(normalizedEventId, () =>
+    withSerializableTransaction(db, async (tx) => {
+      const event = await tx.event.findUnique({ where: { id: normalizedEventId } });
+
+      if (!event) {
+        return { success: false, statusCode: 404, error: EVENT_NOT_FOUND_ERROR };
+      }
+
+      if (event.organizerId !== organizerId) {
+        return { success: false, statusCode: 403, error: EVENT_EDIT_FORBIDDEN_ERROR };
+      }
+
+      if (isEventCancelled(event.status)) {
+        return { success: false, statusCode: 409, error: "Event is already cancelled" };
+      }
+
+      const updated = await tx.event.update({
+        where: { id: normalizedEventId },
+        data: { status: "CANCELLED" },
+      });
+
+      return {
+        success: true,
+        statusCode: 200,
+        event: {
+          id: updated.id,
+          name: updated.name,
+          date: updated.date,
+          time: updated.time,
+          venue: updated.venue,
+          status: updated.status,
+          organizerId: updated.organizerId,
+          updatedAt: updated.updatedAt,
+        },
+      };
+    })
+  );
 }
 
 /**

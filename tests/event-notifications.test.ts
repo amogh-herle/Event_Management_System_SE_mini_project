@@ -49,7 +49,13 @@ function createMockDb() {
     createdAt: new Date("2026-10-01T00:00:00Z"),
     updatedAt: new Date("2026-10-01T00:00:00Z"),
   };
-  events.set("evt1", { ...baseEvent, id: "evt1", name: "Tech Fest" });
+  // capacity matches the single confirmed registration (u1) below exactly,
+  // so u2's waitlist entry reflects a genuinely full event (consistent with
+  // how joinWaitlist only ever waitlists against a full event) and a plain
+  // field edit doesn't incidentally open a seat and auto-promote u2 —
+  // updateEventDetails' capacity-increase promotion is exercised on its own
+  // in lib/registration.ts's tests, not implicitly by these.
+  events.set("evt1", { ...baseEvent, id: "evt1", name: "Tech Fest", capacity: 1 });
   events.set("evt_empty", { ...baseEvent, id: "evt_empty", name: "Empty Workshop" });
   events.set("evt_other", { ...baseEvent, id: "evt_other", name: "Other Event" });
   events.set("evt_cancelled", { ...baseEvent, id: "evt_cancelled", name: "Cancelled Fest", status: EventStatus.CANCELLED });
@@ -114,6 +120,18 @@ function createMockDb() {
           .filter((r) => (!where?.eventId || r.eventId === where.eventId) && matchesStatus(r, where?.status))
           .map((r) => ({ ...r, ...(include?.user ? { user: users.get(r.userId) } : {}) }));
       },
+      // Supports updateEventDetails' capacity-increase promotion loop.
+      async update({ where, data }: any) {
+        for (const [key, r] of registrations.entries()) {
+          if (r.id === where.id) {
+            const updated = { ...r, ...data };
+            registrations.set(key, updated);
+            const u = users.get(updated.userId);
+            return { ...updated, user: u ? { id: u.id, name: u.name, email: u.email } : undefined };
+          }
+        }
+        throw new Error(`registration ${where.id} not found`);
+      },
     },
 
     category: {
@@ -136,6 +154,11 @@ test.beforeEach(() => {
   (prisma as any).event = mockDb.event;
   (prisma as any).registration = mockDb.registration;
   (prisma as any).category = mockDb.category;
+  // updateEventDetails runs inside a SERIALIZABLE transaction on the real
+  // client; these tests swap out the model methods above but have no real
+  // DB connection, so stub $transaction to just run the callback against
+  // the same (already-mocked) client instead of opening a real one.
+  (prisma as any).$transaction = async (fn: any) => fn(prisma);
   sent = [];
   onNotification((n) => {
     sent.push(n);
@@ -175,7 +198,7 @@ const currentDetails = {
   time: "10:00 AM",
   venue: "Main Auditorium",
   category: "Technology",
-  capacity: 100,
+  capacity: 1, // matches evt1's capacity above — see the comment there
 };
 
 function putRequest(id: string, body: unknown, headers: Record<string, string> = {}) {
@@ -326,7 +349,11 @@ test("FR-005b: a renamed event's notification uses the new name and lists the ol
   ]);
 });
 
-test("FR-005b: an update with no participant-facing changes sends no notifications", async () => {
+test("FR-005b: an update with no participant-facing changes sends no EVENT_UPDATE notification", async () => {
+  // Raising capacity alone is not a participant-facing "change" per
+  // diffEventDetails, so no EVENT_UPDATE email goes out — but it does
+  // legitimately open a seat for u2's waitlist entry, which is a separate,
+  // correct WAITLIST_PROMOTION side effect, not a regression here.
   const res = await eventRoutePut(
     putRequest("evt1", { ...currentDetails, capacity: 150 }, sessionCookieFor("u_org")),
     { params: { id: "evt1" } }
@@ -334,7 +361,7 @@ test("FR-005b: an update with no participant-facing changes sends no notificatio
   assert.equal(res.status, 200);
   const data = await res.json();
   assert.deepEqual(data.notifications, { recipients: 0, sent: 0, failed: 0 });
-  assert.equal(sent.length, 0);
+  assert.equal(sent.filter((n) => n.type === "EVENT_UPDATE").length, 0);
 });
 
 test("FR-005b: repeating the same update doesn't notify participants twice", async () => {
@@ -451,4 +478,56 @@ test("FR-005b: notification emails include the changes and escape HTML", () => {
   assert.equal(cancelled.subject, "Event Cancelled: Tech Fest");
   assert.match(cancelled.html, /has been cancelled/);
   assert.match(cancelled.html, /Main Auditorium/);
+});
+
+test("FR-005b: a participant promoted off the waitlist by a capacity-raising edit gets only the promotion email, not a second EVENT_UPDATE email", async () => {
+  mockDb.events.set("evt_promo", { ...mockDb.events.get("evt1"), id: "evt_promo", name: "Promo Fest", capacity: 1 });
+  mockDb.registrations.set("reg_promo_confirmed", {
+    id: "reg_promo_confirmed",
+    userId: "u1",
+    eventId: "evt_promo",
+    status: RegistrationStatus.CONFIRMED,
+  });
+  mockDb.registrations.set("reg_promo_waitlisted", {
+    id: "reg_promo_waitlisted",
+    userId: "u2",
+    eventId: "evt_promo",
+    status: RegistrationStatus.WAITLISTED,
+    createdAt: new Date("2026-10-05T00:00:00Z"),
+  });
+
+  const res = await eventRoutePut(
+    putRequest(
+      "evt_promo",
+      { ...currentDetails, name: "Promo Fest", venue: "New Venue", capacity: 2 },
+      sessionCookieFor("u_org")
+    ),
+    { params: { id: "evt_promo" } }
+  );
+  assert.equal(res.status, 200);
+  assert.equal(mockDb.registrations.get("reg_promo_waitlisted").status, RegistrationStatus.CONFIRMED);
+
+  const toU2 = sent.filter((n) => n.userId === "u2");
+  assert.equal(toU2.length, 1, "the promoted user must receive exactly one email");
+  assert.equal(toU2[0].type, "WAITLIST_PROMOTION");
+
+  const toU1 = sent.filter((n) => n.userId === "u1");
+  assert.equal(toU1.length, 1, "the already-confirmed participant still gets the venue-change email");
+  assert.equal(toU1[0].type, "EVENT_UPDATE");
+});
+
+test("FR-005b: an organizer holding their own event's registration is not notified of their own cancellation or edit", async () => {
+  mockDb.events.set("evt_self", { ...mockDb.events.get("evt1"), id: "evt_self", name: "Self Fest", capacity: 5 });
+  mockDb.registrations.set("reg_self_org", {
+    id: "reg_self_org",
+    userId: "u_org",
+    eventId: "evt_self",
+    status: RegistrationStatus.CONFIRMED,
+  });
+
+  const cancelRes = await eventRoutePatch(cancelRequest("evt_self", sessionCookieFor("u_org")), {
+    params: { id: "evt_self" },
+  });
+  assert.equal(cancelRes.status, 200);
+  assert.equal(sent.filter((n) => n.userId === "u_org").length, 0, "organizer must not email themself");
 });
