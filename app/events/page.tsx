@@ -808,7 +808,8 @@ export default function EventsDirectoryPage() {
                 <>
                   <strong>&quot;{confirmModal.event.name}&quot;</strong> will be marked as{" "}
                   <strong>Cancelled</strong>. It will stop accepting new registrations and will
-                  no longer appear in the active events listing for participants.
+                  no longer appear in the active events listing for participants. Registered
+                  participants will be notified by email.
                 </>
               ) : (
                 <>

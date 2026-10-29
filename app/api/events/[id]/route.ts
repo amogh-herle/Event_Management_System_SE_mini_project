@@ -4,7 +4,27 @@ import { prisma } from "@/lib/prisma";
 import { requireOrganizer } from "@/lib/auth";
 import { createEventSchema } from "@/lib/validation";
 import { StoredEvent, inMemoryEvents } from "@/app/api/events/store";
-import { getEventCapacity } from "@/lib/registration";
+import {
+  getEventCapacity,
+  diffEventDetails,
+  notifyEventParticipants,
+  type NotifyEventParticipantsParams,
+  type NotifyEventParticipantsResult,
+} from "@/lib/registration";
+
+// FR-005b: the event change has already been committed when this runs, so
+// a notification failure must never surface as an error response (or fall
+// into the handlers' DB-unavailable fallback paths).
+async function notifyParticipantsSafely(
+  params: NotifyEventParticipantsParams
+): Promise<NotifyEventParticipantsResult> {
+  try {
+    return await notifyEventParticipants(params);
+  } catch (err) {
+    console.error("[events/:id] participant notification failed:", err);
+    return { recipients: 0, sent: 0, failed: 0 };
+  }
+}
 
 // ─────────────────────────────────────────────
 // GET /api/events/[id]  — Fetch a single event
@@ -131,15 +151,35 @@ export async function PATCH(
       );
     }
 
-    const updated = await prisma.event.update({
-      where: { id },
-      data: { status: "CANCELLED" },
-      include: { organizer: { select: { id: true, name: true, email: true } } },
-    });
+    // Only matches while still ACTIVE, so two concurrent cancel requests
+    // can't both succeed (and both notify participants) — FR-005b.
+    let updated;
+    try {
+      updated = await prisma.event.update({
+        where: { id, status: "ACTIVE" },
+        data: { status: "CANCELLED" },
+        include: { organizer: { select: { id: true, name: true, email: true } } },
+      });
+    } catch (updateErr) {
+      if (updateErr instanceof Prisma.PrismaClientKnownRequestError && updateErr.code === "P2025") {
+        return NextResponse.json(
+          { error: "Event is already cancelled" },
+          { status: 409 }
+        );
+      }
+      throw updateErr;
+    }
 
     // Mirror to in-memory store
     const idx = inMemoryEvents.findIndex((e) => e.id === id);
     if (idx !== -1) inMemoryEvents[idx].status = "CANCELLED";
+
+    // FR-005b: notify registered participants, only once the cancellation
+    // has been committed. Registrations themselves are left untouched.
+    const notifications = await notifyParticipantsSafely({
+      kind: "CANCELLATION",
+      event: updated,
+    });
 
     return NextResponse.json({
       event: {
@@ -148,6 +188,7 @@ export async function PATCH(
         status: updated.status,
         updatedAt: updated.updatedAt.toISOString(),
       },
+      notifications,
     });
   } catch (err) {
     // Only degrade to the in-memory store for a genuinely unreachable
@@ -335,7 +376,16 @@ export async function PUT(
     const idx = inMemoryEvents.findIndex((e) => e.id === id);
     if (idx !== -1) inMemoryEvents[idx] = { ...inMemoryEvents[idx], ...formatted };
 
-    return NextResponse.json({ event: formatted });
+    // FR-005b: notify registered participants of what changed, only after
+    // the update has been committed. A save with no participant-facing
+    // changes (e.g. capacity only) sends nothing.
+    const notifications = await notifyParticipantsSafely({
+      kind: "UPDATE",
+      event: updated,
+      changes: diffEventDetails(event, updated),
+    });
+
+    return NextResponse.json({ event: formatted, notifications });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientInitializationError) {
       const idx = inMemoryEvents.findIndex((e) => e.id === id);
