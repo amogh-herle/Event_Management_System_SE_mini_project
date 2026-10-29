@@ -10,6 +10,9 @@ import {
   checkUserRegistration,
   getEventCapacity,
   listRegistrations,
+  getEventParticipantReport,
+  exportParticipantsToCSV,
+  exportParticipantsToPDF,
   clearEventLocks,
   onNotification,
   onWaitlistNotification,
@@ -1848,4 +1851,497 @@ test("FR-009b: listRegistrations returns active and waitlisted entries with calc
   assert.equal(rahulList.length, 1);
   assert.equal(rahulList[0].status, "waitlisted");
   assert.equal(rahulList[0].waitlistPosition, 2);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FR-010a: Registration counts, seat availability, and participant export
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("FR-010a / UT_01: Verify the displayed registered-participant count matches actual active registrations", async () => {
+  const db = createMockDb();
+  seedData(db);
+
+  // Event: Tech Fest (capacity 100), seed 15 confirmed registrations
+  for (let i = 1; i <= 15; i++) {
+    const userId = `user_attendee_${i}`;
+    db.users.set(userId, {
+      id: userId,
+      name: `Attendee ${i}`,
+      email: `attendee${i}@test.com`,
+      role: "PARTICIPANT",
+      verified: true,
+      suspended: false,
+      createdAt: new Date(),
+    });
+    db.registrations.set(`${userId}_event_tech_fest`, {
+      id: `reg_tech_fest_${i}`,
+      userId,
+      eventId: "event_tech_fest",
+      status: RegistrationStatus.CONFIRMED,
+      createdAt: new Date(Date.now() + i * 1000),
+      updatedAt: new Date(Date.now() + i * 1000),
+    });
+  }
+
+  // Also seed 2 cancelled registrations to ensure cancelled registrations do NOT count as active
+  for (let c = 1; c <= 2; c++) {
+    const cancelUserId = `user_cancelled_${c}`;
+    db.users.set(cancelUserId, {
+      id: cancelUserId,
+      name: `Cancelled User ${c}`,
+      email: `cancelled${c}@test.com`,
+      role: "PARTICIPANT",
+      verified: true,
+      suspended: false,
+      createdAt: new Date(),
+    });
+    db.registrations.set(`${cancelUserId}_event_tech_fest`, {
+      id: `reg_cancelled_${c}`,
+      userId: cancelUserId,
+      eventId: "event_tech_fest",
+      status: RegistrationStatus.CANCELLED,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+  }
+
+  const capacityInfo = await getEventCapacity("event_tech_fest", db);
+  assert.ok(capacityInfo, "capacityInfo should be returned");
+  // Expected: Displayed count reads exactly 15, matching the database
+  assert.equal(capacityInfo.confirmedCount, 15, "Confirmed active participant count must match live DB (15)");
+  assert.equal(capacityInfo.registeredParticipants, 15, "registeredParticipants alias must be 15");
+  assert.equal(capacityInfo.activeRegistrations, 15, "activeRegistrations alias must be 15");
+});
+
+test("FR-010a / UT_02: Verify the displayed available-seat count equals capacity minus active registrations", async () => {
+  const db = createMockDb();
+  seedData(db);
+
+  // Event: Tech Fest has capacity: 100. Seed exactly 15 confirmed registrations.
+  for (let i = 1; i <= 15; i++) {
+    const userId = `user_attendee_${i}`;
+    db.users.set(userId, {
+      id: userId,
+      name: `Attendee ${i}`,
+      email: `attendee${i}@test.com`,
+      role: "PARTICIPANT",
+      verified: true,
+      suspended: false,
+      createdAt: new Date(),
+    });
+    db.registrations.set(`${userId}_event_tech_fest`, {
+      id: `reg_tech_fest_${i}`,
+      userId,
+      eventId: "event_tech_fest",
+      status: RegistrationStatus.CONFIRMED,
+      createdAt: new Date(Date.now() + i * 1000),
+      updatedAt: new Date(Date.now() + i * 1000),
+    });
+  }
+
+  const capacityInfo = await getEventCapacity("event_tech_fest", db);
+  assert.ok(capacityInfo);
+  assert.equal(capacityInfo.capacity, 100, "Event capacity is 100");
+  assert.equal(capacityInfo.confirmedCount, 15, "Active registrations is 15");
+
+  // Expected: Displayed available seats reads exactly 85 (100 - 15 = 85)
+  assert.equal(capacityInfo.remainingSeats, 85, "remainingSeats must equal 85");
+  assert.equal(capacityInfo.availableSeats, 85, "availableSeats alias must equal 85");
+  assert.equal(capacityInfo.isFull, false, "Event is not full");
+});
+
+test("FR-010a / IT_01: Verify the exported CSV participant list matches the on-screen registrant list", async () => {
+  const db = createMockDb();
+  seedData(db);
+
+  // Pre-condition: Organizer owns an event with multiple registrants (15 registrants)
+  for (let i = 1; i <= 15; i++) {
+    const userId = `user_attendee_${i}`;
+    db.users.set(userId, {
+      id: userId,
+      name: `Attendee ${i}, Jr.`, // test comma escaping in names
+      email: `attendee${i}@test.com`,
+      role: "PARTICIPANT",
+      verified: true,
+      suspended: false,
+      createdAt: new Date(),
+    });
+    db.registrations.set(`${userId}_event_tech_fest`, {
+      id: `reg_tech_fest_${i}`,
+      userId,
+      eventId: "event_tech_fest",
+      status: RegistrationStatus.CONFIRMED,
+      createdAt: new Date("2026-10-02T10:00:00Z"),
+      updatedAt: new Date("2026-10-02T10:00:00Z"),
+    });
+  }
+
+  // 1: Open 'View Registrants' (getEventParticipantReport)
+  const report = await getEventParticipantReport("event_tech_fest", db);
+  assert.ok(report);
+  assert.equal(report.participants.length, 15, "On-screen participant list contains 15 registrants");
+
+  // 2: Click 'Export CSV'
+  const csv = exportParticipantsToCSV(report.participants, report.event);
+  assert.ok(csv, "CSV output must not be empty");
+
+  // 3: Verify downloaded CSV contents match on-screen list exactly
+  const csvLines = csv.trim().split("\r\n");
+  assert.equal(csvLines.length, 16, "1 header row + 15 participant rows");
+
+  assert.equal(
+    csvLines[0],
+    `#,Name,Email,Status,Registration Date,Waitlist Position`,
+    "CSV header matches expected schema"
+  );
+
+  for (let i = 0; i < 15; i++) {
+    const onScreenItem = report.participants[i];
+    const row = csvLines[i + 1];
+
+    // Verify row has participant name, email, and CONFIRMED status
+    assert.ok(row.includes(`"Attendee ${i + 1}, Jr."`), `Row ${i + 1} has quoted name with comma`);
+    assert.ok(row.includes(onScreenItem.email), `Row ${i + 1} contains matching email`);
+    assert.ok(row.includes("CONFIRMED"), `Row ${i + 1} contains CONFIRMED status`);
+  }
+});
+
+test("FR-010a / IT_02: Verify the exported PDF participant list matches the on-screen registrant list", async () => {
+  const db = createMockDb();
+  seedData(db);
+
+  // Pre-condition: Organizer owns an event with multiple registrants (15 registrants)
+  for (let i = 1; i <= 15; i++) {
+    const userId = `user_attendee_${i}`;
+    db.users.set(userId, {
+      id: userId,
+      name: `Participant ${i}`,
+      email: `participant${i}@test.com`,
+      role: "PARTICIPANT",
+      verified: true,
+      suspended: false,
+      createdAt: new Date(),
+    });
+    db.registrations.set(`${userId}_event_tech_fest`, {
+      id: `reg_tech_fest_${i}`,
+      userId,
+      eventId: "event_tech_fest",
+      status: RegistrationStatus.CONFIRMED,
+      createdAt: new Date("2026-10-02T10:00:00Z"),
+      updatedAt: new Date("2026-10-02T10:00:00Z"),
+    });
+  }
+
+  // 1: Open 'View Registrants'
+  const report = await getEventParticipantReport("event_tech_fest", db);
+  assert.ok(report);
+  assert.equal(report.participants.length, 15);
+
+  // 2: Click 'Export PDF'
+  const pdfBuffer = exportParticipantsToPDF(report.participants, report.event);
+  assert.ok(pdfBuffer instanceof Buffer);
+  assert.ok(pdfBuffer.length > 500, "PDF buffer must be non-empty");
+
+  const pdfString = pdfBuffer.toString("latin1");
+  // Valid PDF header and EOF trailer
+  assert.ok(pdfString.startsWith("%PDF-1.4"), "PDF must start with %PDF-1.4 header");
+  assert.ok(pdfString.includes("%%EOF"), "PDF must contain %%EOF trailer");
+  assert.ok(pdfString.includes("xref"), "PDF must contain xref table");
+
+  // Contains event details and counts matching on-screen list
+  assert.ok(pdfString.includes("Tech Fest"), "PDF contains event title");
+  assert.ok(pdfString.includes("15 participants"), "PDF contains registered count 15");
+  assert.ok(pdfString.includes("85"), "PDF contains available seats 85");
+
+  // Contains all 15 participant names matching on-screen list
+  for (let i = 1; i <= 15; i++) {
+    assert.ok(
+      pdfString.includes(`Participant ${i}`),
+      `PDF must include Participant ${i} matching on-screen roster`
+    );
+  }
+});
+
+test("FR-010a / ST_02: Verify an organizer can view accurate event-wise registration info across multiple events", async () => {
+  const db = createMockDb();
+  seedData(db);
+
+  // Pre-condition: Organizer owns 3 events with differing registration counts (5, 10, and 20)
+  const event1 = {
+    id: "event_org_1",
+    name: "AI Workshop",
+    title: "AI Workshop",
+    capacity: 50,
+    status: EventStatus.ACTIVE,
+    isCancelled: false,
+    organizerId: "organizer-demo-id",
+    date: new Date("2026-11-01"),
+  };
+  const event2 = {
+    id: "event_org_2",
+    name: "Web Dev Bootcamp",
+    title: "Web Dev Bootcamp",
+    capacity: 30,
+    status: EventStatus.ACTIVE,
+    isCancelled: false,
+    organizerId: "organizer-demo-id",
+    date: new Date("2026-11-05"),
+  };
+  const event3 = {
+    id: "event_org_3",
+    name: "Design Hackathon",
+    title: "Design Hackathon",
+    capacity: 40,
+    status: EventStatus.ACTIVE,
+    isCancelled: false,
+    organizerId: "organizer-demo-id",
+    date: new Date("2026-11-10"),
+  };
+
+  db.events.set(event1.id, event1);
+  db.events.set(event2.id, event2);
+  db.events.set(event3.id, event3);
+
+  // Seed 5 registrants for Event 1
+  for (let i = 1; i <= 5; i++) {
+    const u = `user_e1_${i}`;
+    db.users.set(u, { id: u, name: `E1 User ${i}`, email: `e1_${i}@test.com`, role: "PARTICIPANT" });
+    db.registrations.set(`${u}_${event1.id}`, {
+      id: `reg_e1_${i}`,
+      userId: u,
+      eventId: event1.id,
+      status: RegistrationStatus.CONFIRMED,
+      createdAt: new Date(),
+    });
+  }
+
+  // Seed 10 registrants for Event 2
+  for (let i = 1; i <= 10; i++) {
+    const u = `user_e2_${i}`;
+    db.users.set(u, { id: u, name: `E2 User ${i}`, email: `e2_${i}@test.com`, role: "PARTICIPANT" });
+    db.registrations.set(`${u}_${event2.id}`, {
+      id: `reg_e2_${i}`,
+      userId: u,
+      eventId: event2.id,
+      status: RegistrationStatus.CONFIRMED,
+      createdAt: new Date(),
+    });
+  }
+
+  // Seed 20 registrants for Event 3
+  for (let i = 1; i <= 20; i++) {
+    const u = `user_e3_${i}`;
+    db.users.set(u, { id: u, name: `E3 User ${i}`, email: `e3_${i}@test.com`, role: "PARTICIPANT" });
+    db.registrations.set(`${u}_${event3.id}`, {
+      id: `reg_e3_${i}`,
+      userId: u,
+      eventId: event3.id,
+      status: RegistrationStatus.CONFIRMED,
+      createdAt: new Date(),
+    });
+  }
+
+  // 1 & 2: Open 'My Events' and inspect registration info for each of the 3 events
+  const cap1 = await getEventCapacity(event1.id, db);
+  const cap2 = await getEventCapacity(event2.id, db);
+  const cap3 = await getEventCapacity(event3.id, db);
+
+  // Expected: Each event shows its correct, distinct registration count with no cross-event data mixing
+  assert.equal(cap1?.confirmedCount, 5, "Event 1 has exactly 5 confirmed registrations");
+  assert.equal(cap1?.remainingSeats, 45, "Event 1 has 45 seats remaining (50 - 5)");
+
+  assert.equal(cap2?.confirmedCount, 10, "Event 2 has exactly 10 confirmed registrations");
+  assert.equal(cap2?.remainingSeats, 20, "Event 2 has 20 seats remaining (30 - 10)");
+
+  assert.equal(cap3?.confirmedCount, 20, "Event 3 has exactly 20 confirmed registrations");
+  assert.equal(cap3?.remainingSeats, 20, "Event 3 has 20 seats remaining (40 - 20)");
+});
+
+test("FR-010a / NFR-001: Performance - Generate CSV and PDF exports of 5,000 registrations within 10 seconds", async () => {
+  const largeParticipants: any[] = [];
+  for (let i = 1; i <= 5000; i++) {
+    largeParticipants.push({
+      id: `reg_large_${i}`,
+      userId: `user_large_${i}`,
+      name: `Participant Number ${i}`,
+      email: `participant${i}@biguniversity.edu`,
+      status: i <= 4800 ? "confirmed" : i <= 4950 ? "waitlisted" : "cancelled",
+      registeredAt: new Date(1760000000000 + i * 1000),
+      waitlistPosition: i > 4800 && i <= 4950 ? i - 4800 : null,
+    });
+  }
+
+  const eventInfo = {
+    id: "evt_large_scale",
+    name: "National Mega Symposium 2026",
+    date: new Date("2026-12-01"),
+    time: "09:00 AM - 06:00 PM",
+    venue: "Grand Convention Center",
+    capacity: 4800,
+    confirmedCount: 4800,
+    availableSeats: 0,
+    waitlistCount: 150,
+  };
+
+  // 1. Benchmark CSV Generation (Target: < 10,000 ms)
+  const csvStart = performance.now();
+  const csv = exportParticipantsToCSV(largeParticipants, eventInfo);
+  const csvDuration = performance.now() - csvStart;
+
+  assert.ok(csv.length > 50000, "CSV must contain all 5000 records");
+  assert.ok(csvDuration < 10000, `CSV generation took ${csvDuration}ms, must be < 10,000ms`);
+
+  // 2. Benchmark PDF Generation (Target: < 10,000 ms)
+  const pdfStart = performance.now();
+  const pdfBuffer = exportParticipantsToPDF(largeParticipants, eventInfo);
+  const pdfDuration = performance.now() - pdfStart;
+
+  assert.ok(pdfBuffer.length > 100000, "PDF buffer must contain multi-page document");
+  assert.ok(pdfDuration < 10000, `PDF generation took ${pdfDuration}ms, must be < 10,000ms`);
+
+  const pdfString = pdfBuffer.toString("latin1");
+  assert.ok(pdfString.startsWith("%PDF-1.4"));
+  assert.ok(pdfString.includes("%%EOF"));
+  assert.ok(pdfString.includes("National Mega Symposium 2026"));
+});
+
+test("FR-010a: getEventParticipantReport sorts confirmed first, then waitlist with queue position, then cancelled", async () => {
+  const db = createMockDb();
+  seedData(db);
+
+  db.users.set("u_conf_1", { id: "u_conf_1", name: "Confirmed One", email: "c1@test.com" });
+  db.users.set("u_wait_1", { id: "u_wait_1", name: "Waitlist One", email: "w1@test.com" });
+  db.users.set("u_wait_2", { id: "u_wait_2", name: "Waitlist Two", email: "w2@test.com" });
+  db.users.set("u_canc_1", { id: "u_canc_1", name: "Cancelled One", email: "x1@test.com" });
+
+  db.registrations.set("u_conf_1_evt", {
+    id: "r1",
+    userId: "u_conf_1",
+    eventId: "event_tech_fest",
+    status: RegistrationStatus.CONFIRMED,
+    createdAt: new Date("2026-10-01T10:00:00Z"),
+  });
+  db.registrations.set("u_wait_1_evt", {
+    id: "r2",
+    userId: "u_wait_1",
+    eventId: "event_tech_fest",
+    status: RegistrationStatus.WAITLISTED,
+    createdAt: new Date("2026-10-01T11:00:00Z"),
+  });
+  db.registrations.set("u_wait_2_evt", {
+    id: "r3",
+    userId: "u_wait_2",
+    eventId: "event_tech_fest",
+    status: RegistrationStatus.WAITLISTED,
+    createdAt: new Date("2026-10-01T12:00:00Z"),
+  });
+  db.registrations.set("u_canc_1_evt", {
+    id: "r4",
+    userId: "u_canc_1",
+    eventId: "event_tech_fest",
+    status: RegistrationStatus.CANCELLED,
+    createdAt: new Date("2026-10-01T09:00:00Z"),
+  });
+
+  const report = await getEventParticipantReport("event_tech_fest", db);
+  assert.ok(report);
+  assert.equal(report.participants.length, 4);
+
+  // Confirmed comes first
+  assert.equal(report.participants[0].userId, "u_conf_1");
+  assert.equal(report.participants[0].status, "confirmed");
+  assert.equal(report.participants[0].waitlistPosition, null);
+
+  // Then waitlist in chronological order
+  assert.equal(report.participants[1].userId, "u_wait_1");
+  assert.equal(report.participants[1].status, "waitlisted");
+  assert.equal(report.participants[1].waitlistPosition, 1);
+
+  assert.equal(report.participants[2].userId, "u_wait_2");
+  assert.equal(report.participants[2].status, "waitlisted");
+  assert.equal(report.participants[2].waitlistPosition, 2);
+
+  // Then cancelled
+  assert.equal(report.participants[3].userId, "u_canc_1");
+  assert.equal(report.participants[3].status, "cancelled");
+});
+
+test("FR-010a: Edge Case - Event with 0 registrants exports clean empty roster without errors", async () => {
+  const db = createMockDb();
+  seedData(db);
+
+  const report = await getEventParticipantReport("event_old_meetup", db);
+  assert.ok(report);
+  assert.equal(report.participants.length, 0);
+  assert.equal(report.confirmedCount, 0);
+
+  const csv = exportParticipantsToCSV(report.participants, report.event);
+  assert.ok(csv.includes("#,Name,Email,Status,Registration Date,Waitlist Position"));
+  const lines = csv.trim().split("\r\n");
+  assert.equal(lines.length, 1, "Only header row present");
+
+  const pdfBuffer = exportParticipantsToPDF(report.participants, report.event);
+  assert.ok(pdfBuffer instanceof Buffer);
+  const pdfString = pdfBuffer.toString("latin1");
+  assert.ok(pdfString.startsWith("%PDF-1.4"));
+  assert.ok(pdfString.includes("No participants registered"));
+});
+
+test("FR-010a: CSV export neutralizes formula-injection payloads in participant-controlled fields", async () => {
+  const participants: any[] = [
+    {
+      id: "reg_inj_1",
+      userId: "user_inj_1",
+      name: '=HYPERLINK("http://evil.example","click me")',
+      email: "attacker@test.com",
+      status: "confirmed",
+      registeredAt: new Date("2026-10-02T10:00:00Z"),
+      waitlistPosition: null,
+    },
+    {
+      id: "reg_inj_2",
+      userId: "user_inj_2",
+      name: "+1+1",
+      email: "-2+3",
+      status: "confirmed",
+      registeredAt: new Date("2026-10-02T10:00:00Z"),
+      waitlistPosition: null,
+    },
+  ];
+
+  const csv = exportParticipantsToCSV(participants, { name: "Injection Test Event" } as any);
+  const lines = csv.trim().split("\r\n");
+
+  // A spreadsheet only treats a cell as a formula when the FIRST character
+  // (after unwrapping quotes) is =, +, -, or @ — the leading single quote
+  // this fix inserts must survive the CSV quoting so that character is
+  // never first in the field.
+  assert.ok(lines[1].includes('"\'=HYPERLINK'), "leading = must be neutralized with a leading quote");
+  assert.ok(lines[2].includes("'+1+1"), "leading + must be neutralized");
+  assert.ok(lines[2].includes("'-2+3"), "leading - in email field must be neutralized");
+});
+
+test("FR-010a: PDF export renders accented Latin-1 names instead of replacing them with '?'", async () => {
+  const participants: any[] = [
+    {
+      id: "reg_unicode_1",
+      userId: "user_unicode_1",
+      name: "José Zoë Müller",
+      email: "jose@test.com",
+      status: "confirmed",
+      registeredAt: new Date("2026-10-02T10:00:00Z"),
+      waitlistPosition: null,
+    },
+  ];
+
+  const pdfBuffer = exportParticipantsToPDF(participants, { name: "Unicode Test Event" } as any);
+  const pdfString = pdfBuffer.toString("latin1");
+
+  assert.ok(pdfString.startsWith("%PDF-1.4"));
+  // The accented characters must appear as themselves (latin1 byte, per
+  // the declared /Encoding /WinAnsiEncoding), not collapsed to "?".
+  assert.ok(pdfString.includes("Jos\xe9"), "é must render, not fall back to '?'");
+  assert.ok(pdfString.includes("Zo\xeb"), "ë must render, not fall back to '?'");
+  assert.ok(pdfString.includes("M\xfcller"), "ü must render, not fall back to '?'");
+  assert.ok(pdfString.includes("/Encoding /WinAnsiEncoding"), "fonts must declare WinAnsiEncoding");
 });
