@@ -269,6 +269,16 @@ export default async function EventPage({ params }: EventPageProps) {
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                  {/* FR-004b: only the owning organizer may edit, and only while active */}
+                  {authUser.id === event.organizerId && !isCancelled && (
+                    <Link
+                      href={`/events/${event.id}/edit`}
+                      className="btn btn-sm btn-ghost"
+                      style={{ border: "1px solid var(--border)" }}
+                    >
+                      Edit Event
+                    </Link>
+                  )}
                   <Link href={`/events/${event.id}/registrants`} className="btn btn-sm btn-primary">
                     <UsersIcon size={14} /> View Registrants
                   </Link>

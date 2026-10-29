@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
+import { Prisma, RegistrationStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireOrganizer } from "@/lib/auth";
-import { inMemoryEvents } from "@/app/api/events/store";
+import { createEventSchema } from "@/lib/validation";
+import { StoredEvent, inMemoryEvents } from "@/app/api/events/store";
 import { getEventCapacity } from "@/lib/registration";
 
 // ─────────────────────────────────────────────
@@ -192,6 +193,191 @@ export async function PATCH(
 
     console.error("[events/:id] failed to cancel event:", err);
     return NextResponse.json({ error: "Failed to cancel event" }, { status: 500 });
+  }
+}
+
+// ─────────────────────────────────────────────
+// PUT /api/events/[id]  — Edit event details (FR-004b)
+//   Body: { name, description, date, time, venue, category, capacity }
+//   Same fields and validation as creation (FR-004a). Updates the existing
+//   Event row in place — registrations are never touched.
+// ─────────────────────────────────────────────
+export async function PUT(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  const auth = await requireOrganizer(request);
+  if (!auth.authorized) {
+    return NextResponse.json(
+      {
+        error:
+          auth.status === 403
+            ? "Access denied: Only organizers can edit events"
+            : auth.error ?? "Access denied",
+      },
+      { status: auth.status ?? 403 }
+    );
+  }
+
+  const { id } = params;
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+
+  const parsed = createEventSchema.safeParse(body);
+  if (!parsed.success) {
+    const firstIssue = parsed.error.issues[0]?.message ?? "Invalid event details";
+    const fieldErrors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) {
+      const field = issue.path[0];
+      if (typeof field === "string") {
+        fieldErrors[field] = issue.message;
+      }
+    }
+    return NextResponse.json(
+      { error: firstIssue, errors: fieldErrors },
+      { status: 400 }
+    );
+  }
+
+  const { name, description, date, time, venue, category, capacity } = parsed.data;
+
+  // ── Database path ──────────────────────────────────────────────────────────
+  try {
+    const event = await prisma.event.findUnique({ where: { id } });
+
+    if (!event) {
+      return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    }
+
+    // Only the owning organizer may edit (same ownership guard as cancel)
+    if (event.organizerId !== auth.user.id) {
+      return NextResponse.json(
+        { error: "Forbidden: you are not the organizer of this event" },
+        { status: 403 }
+      );
+    }
+
+    if (event.status === "CANCELLED") {
+      return NextResponse.json(
+        { error: "Cancelled events cannot be edited" },
+        { status: 409 }
+      );
+    }
+
+    // Shrinking capacity below the seats already confirmed would leave
+    // existing registrations over capacity — reject instead of touching them.
+    const confirmedCount = await prisma.registration.count({
+      where: { eventId: id, status: RegistrationStatus.CONFIRMED },
+    });
+    if (capacity < confirmedCount) {
+      const message = `Invalid capacity: ${confirmedCount} participants are already confirmed`;
+      return NextResponse.json(
+        { error: message, errors: { capacity: message } },
+        { status: 409 }
+      );
+    }
+
+    // Keep the optional category relation in sync, same as creation.
+    let categoryId: string | null = event.categoryId ?? null;
+    if (category !== event.category) {
+      try {
+        const cat = await prisma.category.upsert({
+          where: { name: category },
+          update: {},
+          create: { name: category },
+        });
+        categoryId = cat.id;
+      } catch (catErr) {
+        categoryId = null;
+        if (!(catErr instanceof Prisma.PrismaClientKnownRequestError && catErr.code === "P2021")) {
+          console.error("[events/:id] category upsert failed, continuing without category link:", catErr);
+        }
+      }
+    }
+
+    const updated = await prisma.event.update({
+      where: { id },
+      data: {
+        name,
+        description,
+        date: new Date(date),
+        time,
+        venue,
+        category,
+        categoryId,
+        capacity,
+      },
+      include: { organizer: { select: { id: true, name: true, email: true } } },
+    });
+
+    const formatted: StoredEvent = {
+      id: updated.id,
+      name: updated.name,
+      description: updated.description,
+      date: updated.date.toISOString().slice(0, 10),
+      time: updated.time,
+      venue: updated.venue,
+      category: updated.category,
+      capacity: updated.capacity,
+      status: updated.status,
+      organizerId: updated.organizerId,
+      organizerName: updated.organizer.name,
+      createdAt: updated.createdAt.toISOString(),
+      updatedAt: updated.updatedAt.toISOString(),
+    };
+
+    // Mirror to in-memory store
+    const idx = inMemoryEvents.findIndex((e) => e.id === id);
+    if (idx !== -1) inMemoryEvents[idx] = { ...inMemoryEvents[idx], ...formatted };
+
+    return NextResponse.json({ event: formatted });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientInitializationError) {
+      const idx = inMemoryEvents.findIndex((e) => e.id === id);
+      if (idx === -1) {
+        return NextResponse.json({ error: "Event not found" }, { status: 404 });
+      }
+
+      if (inMemoryEvents[idx].organizerId !== auth.user.id) {
+        return NextResponse.json(
+          { error: "Forbidden: you are not the organizer of this event" },
+          { status: 403 }
+        );
+      }
+
+      if (inMemoryEvents[idx].status === "CANCELLED") {
+        return NextResponse.json(
+          { error: "Cancelled events cannot be edited" },
+          { status: 409 }
+        );
+      }
+
+      inMemoryEvents[idx] = {
+        ...inMemoryEvents[idx],
+        name,
+        description,
+        date,
+        time,
+        venue,
+        category,
+        capacity,
+        updatedAt: new Date().toISOString(),
+      };
+
+      return NextResponse.json({ event: inMemoryEvents[idx] });
+    }
+
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+      return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    }
+
+    console.error("[events/:id] failed to update event:", err);
+    return NextResponse.json({ error: "Failed to update event" }, { status: 500 });
   }
 }
 
