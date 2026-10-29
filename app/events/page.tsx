@@ -709,6 +709,16 @@ export default function EventsDirectoryPage() {
                       >
                         <UsersIcon size={14} /> View Registrants
                       </button>
+                      {/* FR-004b: edit event details */}
+                      {event.status === "ACTIVE" && (
+                        <Link
+                          href={`/events/${event.id}/edit`}
+                          className="btn btn-sm btn-outline-primary"
+                          aria-label={`Edit event: ${event.name}`}
+                        >
+                          Edit
+                        </Link>
+                      )}
                       {event.status === "ACTIVE" && (
                         <button
                           type="button"
