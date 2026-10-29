@@ -34,6 +34,10 @@ export const ALREADY_WAITLISTED_ERROR = "Already on the waitlist for this event"
 export const EVENT_NOT_FULL_ERROR = "Event has available seats; waitlist is only available when capacity is reached";
 export const REGISTRATION_NOT_FOUND_ERROR = "Registration not found";
 export const CANNOT_CANCEL_CANCELLED_EVENT_ERROR = "Cannot cancel registration for a cancelled event";
+export const EVENT_EDIT_FORBIDDEN_ERROR = "Forbidden: you are not the organizer of this event";
+export const CANNOT_EDIT_CANCELLED_EVENT_ERROR = "Cancelled events cannot be edited";
+export const EVENT_EDIT_CONFLICT_ERROR =
+  "This event was changed elsewhere — reload and try again";
 
 export interface RegisterResultRegistration {
   id: string;
@@ -78,6 +82,31 @@ export interface CancelResult {
   registration?: RegisterResultRegistration;
   promotedRegistration?: RegisterResultRegistration;
   remainingSeats?: number;
+}
+
+export interface UpdateEventResult {
+  success: boolean;
+  statusCode: number;
+  error?: string;
+  errors?: Record<string, string>;
+  event?: {
+    id: string;
+    name: string;
+    description: string;
+    date: Date;
+    time: string;
+    venue: string;
+    category: string;
+    categoryId: string | null;
+    capacity: number;
+    status: EventStatus | string;
+    organizerId: string;
+    organizerName: string;
+    createdAt: Date;
+    updatedAt: Date;
+  };
+  promotedCount?: number;
+  changes?: EventChange[];
 }
 
 export type PrismaClientLike = any;
@@ -1689,6 +1718,234 @@ export async function cancelRegistration(
         message: "Registration cancelled",
         registration: formatRegistration(cancelled),
         remainingSeats,
+      };
+    })
+  );
+
+  if (result.success && notifications.length > 0) {
+    for (const notify of notifications) {
+      try {
+        await notify();
+      } catch (err) {
+        console.error("[registration] post-commit notification dispatch failed:", err);
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Edit an existing event's details (FR-004b). Locked and transactional like
+ * registerForEvent/cancelRegistration — a capacity edit that races a
+ * concurrent registration must not be able to oversell the event, which a
+ * bare check-then-write (no lock, no SERIALIZABLE transaction) cannot
+ * guarantee.
+ *
+ * Raising capacity can free up seats, so this promotes waitlisted users
+ * into them the same way a cancellation does (FIFO, non-suspended), up to
+ * however many seats actually opened — the organizer's mental model is
+ * "raising capacity helps the waitlist," and the rest of the app already
+ * treats "a seat became available" as a promotion trigger.
+ */
+export async function updateEventDetails(
+  params: {
+    eventId: string;
+    organizerId: string;
+    data: {
+      name: string;
+      description: string;
+      date: string;
+      time: string;
+      venue: string;
+      category: string;
+      capacity: number;
+    };
+    expectedUpdatedAt?: string;
+  },
+  db: PrismaClientLike = prisma
+): Promise<UpdateEventResult> {
+  const { eventId, organizerId, data, expectedUpdatedAt } = params;
+  const normalizedEventId = eventId.trim();
+
+  // See cancelRegistration: dispatched only after commit + lock release.
+  const notifications: Array<() => Promise<boolean>> = [];
+
+  const result = await withEventLock(normalizedEventId, () =>
+    withSerializableTransaction(db, async (tx) => {
+      notifications.length = 0;
+
+      const event = await tx.event.findUnique({
+        where: { id: normalizedEventId },
+        include: { organizer: { select: { id: true, name: true } } },
+      });
+
+      if (!event) {
+        return { success: false, statusCode: 404, error: EVENT_NOT_FOUND_ERROR };
+      }
+
+      if (event.organizerId !== organizerId) {
+        return { success: false, statusCode: 403, error: EVENT_EDIT_FORBIDDEN_ERROR };
+      }
+
+      if (isEventCancelled(event.status)) {
+        return { success: false, statusCode: 409, error: CANNOT_EDIT_CANCELLED_EVENT_ERROR };
+      }
+
+      if (
+        expectedUpdatedAt &&
+        new Date(expectedUpdatedAt).getTime() !== new Date(event.updatedAt).getTime()
+      ) {
+        return { success: false, statusCode: 409, error: EVENT_EDIT_CONFLICT_ERROR };
+      }
+
+      let confirmedCount = 0;
+      if (typeof tx.registration?.count === "function") {
+        confirmedCount = await tx.registration.count({
+          where: { eventId: event.id, status: RegistrationStatus.CONFIRMED },
+        });
+      } else if (typeof tx.registration?.findMany === "function") {
+        const list = await tx.registration.findMany({
+          where: { eventId: event.id, status: RegistrationStatus.CONFIRMED },
+        });
+        confirmedCount = list.filter(
+          (r: any) => r.status === RegistrationStatus.CONFIRMED || r.status === "CONFIRMED"
+        ).length;
+      }
+
+      if (data.capacity < confirmedCount) {
+        const message = `Invalid capacity: ${confirmedCount} participants are already confirmed`;
+        return {
+          success: false,
+          statusCode: 409,
+          error: message,
+          errors: { capacity: message },
+        };
+      }
+
+      // Keep the optional category relation in sync, same as creation. A
+      // real failure here (anything but the table-doesn't-exist case) is
+      // propagated rather than swallowed — continuing silently would save
+      // the event with a category string that no longer matches its
+      // relation, reported to the organizer as a successful save.
+      let categoryId: string | null = event.categoryId ?? null;
+      if (data.category !== event.category) {
+        try {
+          const cat = await tx.category.upsert({
+            where: { name: data.category },
+            update: {},
+            create: { name: data.category },
+          });
+          categoryId = cat.id;
+        } catch (catErr: any) {
+          if (catErr instanceof Prisma.PrismaClientKnownRequestError && catErr.code === "P2021") {
+            categoryId = null;
+          } else {
+            throw catErr;
+          }
+        }
+      }
+
+      const updated = await tx.event.update({
+        where: { id: normalizedEventId },
+        data: {
+          name: data.name,
+          description: data.description,
+          date: new Date(data.date),
+          time: data.time,
+          venue: data.venue,
+          category: data.category,
+          categoryId,
+          capacity: data.capacity,
+        },
+        include: { organizer: { select: { id: true, name: true } } },
+      });
+
+      let promotedCount = 0;
+      const newCapacity = typeof updated.capacity === "number" ? updated.capacity : 0;
+      let openSeats = newCapacity - confirmedCount;
+
+      while (openSeats > 0) {
+        let candidate: any = null;
+        if (typeof tx.registration?.findFirst === "function") {
+          candidate = await tx.registration.findFirst({
+            where: {
+              eventId: normalizedEventId,
+              status: RegistrationStatus.WAITLISTED,
+              user: { suspended: false },
+            },
+            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+            include: {
+              user: { select: { id: true, name: true, email: true } },
+              event: { select: { id: true, name: true, date: true, status: true } },
+            },
+          });
+        } else if (typeof tx.registration?.findMany === "function") {
+          const list = await tx.registration.findMany({
+            where: { eventId: normalizedEventId, status: RegistrationStatus.WAITLISTED },
+          });
+          const waitlisted = list.filter(
+            (r: any) => r.status === RegistrationStatus.WAITLISTED || r.status === "WAITLISTED"
+          );
+          waitlisted.sort((a: any, b: any) => {
+            const diff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+            if (diff !== 0) return diff;
+            return String(a.id).localeCompare(String(b.id));
+          });
+          for (const match of waitlisted) {
+            let u = null;
+            if (typeof tx.user?.findUnique === "function") {
+              u = await tx.user.findUnique({ where: { id: match.userId } });
+            }
+            if (u && u.suspended) continue;
+            candidate = {
+              ...match,
+              user: u ? { id: u.id, name: u.name, email: u.email } : match.user,
+            };
+            break;
+          }
+        }
+
+        if (!candidate) break;
+
+        const promoted = await tx.registration.update({
+          where: { id: candidate.id },
+          data: { status: RegistrationStatus.CONFIRMED, updatedAt: new Date() },
+          include: {
+            user: { select: { id: true, name: true, email: true } },
+            event: { select: { id: true, name: true, date: true, status: true } },
+          },
+        });
+
+        notifications.push(() => sendWaitlistPromotionNotification(promoted, db));
+        promotedCount++;
+        openSeats--;
+      }
+
+      return {
+        success: true,
+        statusCode: 200,
+        event: {
+          id: updated.id,
+          name: updated.name,
+          description: updated.description,
+          date: updated.date,
+          time: updated.time,
+          venue: updated.venue,
+          category: updated.category,
+          categoryId: updated.categoryId,
+          capacity: updated.capacity,
+          status: updated.status,
+          organizerId: updated.organizerId,
+          organizerName: updated.organizer.name,
+          createdAt: updated.createdAt,
+          updatedAt: updated.updatedAt,
+        },
+        promotedCount,
+        // FR-005b: computed from the exact before/after rows this
+        // transaction committed, rather than a separate pre-fetch outside
+        // the lock, which a P2034 retry (or a concurrent edit) could skew.
+        changes: diffEventDetails(event, updated),
       };
     })
   );

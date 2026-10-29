@@ -88,6 +88,39 @@ function createMockDb() {
           return true;
         }).length;
       },
+      // Supports updateEventDetails' capacity-increase promotion loop:
+      // earliest-created, non-suspended waitlisted registration first.
+      async findFirst({ where }: any = {}) {
+        let list = Array.from(registrations.values());
+        if (where?.eventId) list = list.filter((r) => r.eventId === where.eventId);
+        if (where?.status) list = list.filter((r) => r.status === where.status);
+        if (where?.user?.suspended === false) {
+          list = list.filter((r) => {
+            const u = users.get(r.userId);
+            return u && !u.suspended;
+          });
+        }
+        list.sort((a, b) => {
+          const diff = new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime();
+          if (diff !== 0) return diff;
+          return String(a.id).localeCompare(String(b.id));
+        });
+        const match = list[0];
+        if (!match) return null;
+        const u = users.get(match.userId);
+        return { ...match, user: u ? { id: u.id, name: u.name, email: u.email } : undefined };
+      },
+      async update({ where, data }: any) {
+        for (const [key, r] of registrations.entries()) {
+          if (r.id === where.id) {
+            const updated = { ...r, ...data };
+            registrations.set(key, updated);
+            const u = users.get(updated.userId);
+            return { ...updated, user: u ? { id: u.id, name: u.name, email: u.email } : undefined };
+          }
+        }
+        throw new Error(`registration ${where.id} not found`);
+      },
     },
 
     category: {
@@ -109,6 +142,11 @@ test.beforeEach(() => {
   (prisma as any).event = mockDb.event;
   (prisma as any).registration = mockDb.registration;
   (prisma as any).category = mockDb.category;
+  // updateEventDetails runs inside a SERIALIZABLE transaction on the real
+  // client; these tests swap out the model methods above but have no real
+  // DB connection, so stub $transaction to just run the callback against
+  // the same (already-mocked) client instead of opening a real one.
+  (prisma as any).$transaction = async (fn: any) => fn(prisma);
 });
 
 const validBody = {
@@ -256,4 +294,61 @@ test("FR-004b: PUT /api/events/[id] returns 409 for a cancelled event", async ()
   );
   assert.equal(res.status, 409);
   assert.equal(mockDb.events.get("evt_cancelled").name, "Cancelled Fest");
+});
+
+test("FR-004b: raising capacity auto-promotes the earliest waitlisted registration", async () => {
+  // Shrink evt1 to a 2-seat event (reg1 + reg2 already fill it) and add a
+  // waitlisted registration that should be promoted once a seat opens up.
+  mockDb.events.set("evt1", { ...mockDb.events.get("evt1"), capacity: 2 });
+  mockDb.registrations.set("reg3", {
+    id: "reg3",
+    userId: "u2",
+    eventId: "evt1",
+    status: RegistrationStatus.WAITLISTED,
+    createdAt: new Date("2026-10-05T00:00:00Z"),
+  });
+
+  const res = await eventRoutePut(
+    putRequest("evt1", { ...validBody, capacity: 3 }, sessionCookieFor("u_org")),
+    { params: { id: "evt1" } }
+  );
+  assert.equal(res.status, 200);
+  const data = await res.json();
+  assert.equal(data.promotedCount, 1, "exactly one waitlisted registration should be promoted");
+  assert.equal(mockDb.registrations.get("reg3").status, RegistrationStatus.CONFIRMED);
+});
+
+test("FR-004b: PUT /api/events/[id] returns 409 when the event was changed elsewhere (optimistic concurrency)", async () => {
+  const res = await eventRoutePut(
+    putRequest(
+      "evt1",
+      { ...validBody, updatedAt: new Date("2020-01-01T00:00:00Z").toISOString() },
+      sessionCookieFor("u_org")
+    ),
+    { params: { id: "evt1" } }
+  );
+  assert.equal(res.status, 409);
+  assert.equal(mockDb.events.get("evt1").name, "Tech Fest", "stale-conflict edit must not apply");
+});
+
+test("FR-004b: PUT /api/events/[id] returns 500 instead of silently dropping the category relation on upsert failure", async () => {
+  const originalUpsert = mockDb.category.upsert;
+  mockDb.category.upsert = async () => {
+    throw new Error("simulated category upsert failure");
+  };
+  try {
+    const res = await eventRoutePut(
+      putRequest("evt1", validBody, sessionCookieFor("u_org")), // validBody.category = "Workshops" != evt1's "Technology"
+      { params: { id: "evt1" } }
+    );
+    assert.equal(res.status, 500);
+    assert.equal(
+      mockDb.events.get("evt1").categoryId,
+      "cat_tech",
+      "a failed category upsert must not leave the event half-saved with a mismatched category/categoryId"
+    );
+    assert.equal(mockDb.events.get("evt1").name, "Tech Fest");
+  } finally {
+    mockDb.category.upsert = originalUpsert;
+  }
 });

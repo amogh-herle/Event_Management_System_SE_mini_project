@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { Prisma, RegistrationStatus } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireOrganizer } from "@/lib/auth";
 import { createEventSchema } from "@/lib/validation";
 import { StoredEvent, inMemoryEvents } from "@/app/api/events/store";
 import {
   getEventCapacity,
-  diffEventDetails,
+  updateEventDetails,
   notifyEventParticipants,
   type NotifyEventParticipantsParams,
   type NotifyEventParticipantsResult,
@@ -286,76 +286,26 @@ export async function PUT(
   }
 
   const { name, description, date, time, venue, category, capacity } = parsed.data;
+  const expectedUpdatedAt =
+    typeof (body as any)?.updatedAt === "string" ? (body as any).updatedAt : undefined;
 
   // ── Database path ──────────────────────────────────────────────────────────
   try {
-    const event = await prisma.event.findUnique({ where: { id } });
-
-    if (!event) {
-      return NextResponse.json({ error: "Event not found" }, { status: 404 });
-    }
-
-    // Only the owning organizer may edit (same ownership guard as cancel)
-    if (event.organizerId !== auth.user.id) {
-      return NextResponse.json(
-        { error: "Forbidden: you are not the organizer of this event" },
-        { status: 403 }
-      );
-    }
-
-    if (event.status === "CANCELLED") {
-      return NextResponse.json(
-        { error: "Cancelled events cannot be edited" },
-        { status: 409 }
-      );
-    }
-
-    // Shrinking capacity below the seats already confirmed would leave
-    // existing registrations over capacity — reject instead of touching them.
-    const confirmedCount = await prisma.registration.count({
-      where: { eventId: id, status: RegistrationStatus.CONFIRMED },
-    });
-    if (capacity < confirmedCount) {
-      const message = `Invalid capacity: ${confirmedCount} participants are already confirmed`;
-      return NextResponse.json(
-        { error: message, errors: { capacity: message } },
-        { status: 409 }
-      );
-    }
-
-    // Keep the optional category relation in sync, same as creation.
-    let categoryId: string | null = event.categoryId ?? null;
-    if (category !== event.category) {
-      try {
-        const cat = await prisma.category.upsert({
-          where: { name: category },
-          update: {},
-          create: { name: category },
-        });
-        categoryId = cat.id;
-      } catch (catErr) {
-        categoryId = null;
-        if (!(catErr instanceof Prisma.PrismaClientKnownRequestError && catErr.code === "P2021")) {
-          console.error("[events/:id] category upsert failed, continuing without category link:", catErr);
-        }
-      }
-    }
-
-    const updated = await prisma.event.update({
-      where: { id },
-      data: {
-        name,
-        description,
-        date: new Date(date),
-        time,
-        venue,
-        category,
-        categoryId,
-        capacity,
-      },
-      include: { organizer: { select: { id: true, name: true, email: true } } },
+    const result = await updateEventDetails({
+      eventId: id,
+      organizerId: auth.user.id,
+      data: { name, description, date, time, venue, category, capacity },
+      expectedUpdatedAt,
     });
 
+    if (!result.success || !result.event) {
+      return NextResponse.json(
+        { error: result.error, errors: result.errors },
+        { status: result.statusCode }
+      );
+    }
+
+    const updated = result.event;
     const formatted: StoredEvent = {
       id: updated.id,
       name: updated.name,
@@ -365,27 +315,34 @@ export async function PUT(
       venue: updated.venue,
       category: updated.category,
       capacity: updated.capacity,
-      status: updated.status,
+      status: updated.status as StoredEvent["status"],
       organizerId: updated.organizerId,
-      organizerName: updated.organizer.name,
+      organizerName: updated.organizerName,
       createdAt: updated.createdAt.toISOString(),
       updatedAt: updated.updatedAt.toISOString(),
     };
 
-    // Mirror to in-memory store
+    // Mirror to in-memory store, used only once the DB path below throws
+    // PrismaClientInitializationError on a later request.
     const idx = inMemoryEvents.findIndex((e) => e.id === id);
     if (idx !== -1) inMemoryEvents[idx] = { ...inMemoryEvents[idx], ...formatted };
 
     // FR-005b: notify registered participants of what changed, only after
     // the update has been committed. A save with no participant-facing
-    // changes (e.g. capacity only) sends nothing.
+    // changes (e.g. capacity only) sends nothing. The before/after diff
+    // comes from updateEventDetails itself, computed from the exact rows
+    // its own transaction committed.
     const notifications = await notifyParticipantsSafely({
       kind: "UPDATE",
       event: updated,
-      changes: diffEventDetails(event, updated),
+      changes: result.changes ?? [],
     });
 
-    return NextResponse.json({ event: formatted, notifications });
+    return NextResponse.json({
+      event: formatted,
+      notifications,
+      ...(result.promotedCount ? { promotedCount: result.promotedCount } : {}),
+    });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientInitializationError) {
       const idx = inMemoryEvents.findIndex((e) => e.id === id);
@@ -406,6 +363,12 @@ export async function PUT(
           { status: 409 }
         );
       }
+
+      // Unlike the DB path, this fallback cannot reject a capacity drop
+      // below confirmed registrations — the in-memory store has no
+      // Registration table to count against (see store.ts), the same
+      // documented limitation every other capacity-aware field on
+      // StoredEvent already carries in this degraded mode.
 
       inMemoryEvents[idx] = {
         ...inMemoryEvents[idx],
