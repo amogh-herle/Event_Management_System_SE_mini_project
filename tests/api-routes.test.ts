@@ -20,6 +20,9 @@ import {
   GET as remindersRouteGet,
 } from "../app/api/reminders/route";
 import {
+  GET as exportRouteGet,
+} from "../app/api/events/[id]/export/route";
+import {
   DUPLICATE_REGISTRATION_ERROR,
   EVENT_CANCELLED_ERROR,
   EVENT_NOT_FOUND_ERROR,
@@ -73,6 +76,30 @@ function createMockDb() {
     suspended: false,
   });
 
+  users.set("u_org", {
+    id: "u_org",
+    name: "Campus Organizer",
+    email: "organizer@test.com",
+    role: Role.ORGANIZER,
+    suspended: false,
+  });
+
+  users.set("u_org2", {
+    id: "u_org2",
+    name: "Other Organizer",
+    email: "other@test.com",
+    role: Role.ORGANIZER,
+    suspended: false,
+  });
+
+  users.set("u_admin", {
+    id: "u_admin",
+    name: "Admin User",
+    email: "admin@test.com",
+    role: Role.ADMIN,
+    suspended: false,
+  });
+
   events.set("evt1", {
     id: "evt1",
     name: "Tech Fest",
@@ -81,6 +108,7 @@ function createMockDb() {
     status: EventStatus.ACTIVE,
     isCancelled: false,
     capacity: 100,
+    organizerId: "u_org",
   });
 
   events.set("evt_cancelled", {
@@ -138,8 +166,13 @@ function createMockDb() {
     },
 
     event: {
-      async findUnique({ where }: any) {
-        return events.get(where.id) || null;
+      async findUnique({ where, include }: any) {
+        const e = events.get(where.id) || null;
+        if (!e) return null;
+        return {
+          ...e,
+          ...(include?.organizer ? { organizer: users.get(e.organizerId) } : {}),
+        };
       },
       async findMany({ where }: any = {}) {
         return Array.from(events.values()).filter((e) => {
@@ -897,4 +930,238 @@ test("API: POST /api/reminders and GET /api/reminders processes upcoming event r
     if (previousSecret === undefined) delete process.env.CRON_SECRET;
     else process.env.CRON_SECRET = previousSecret;
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FR-010a: Registration counts, seat availability, and participant export
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("API: GET /api/events/[id]/export returns 401 when no session is present", async () => {
+  const req = new Request("http://localhost:3000/api/events/evt1/export");
+  const res = await exportRouteGet(req, { params: { id: "evt1" } });
+  assert.equal(res.status, 401);
+  const data = await res.json();
+  assert.equal(data.error, AUTH_REQUIRED_ERROR);
+});
+
+test("API: GET /api/events/[id]/export returns 404 when event not found", async () => {
+  const req = new Request("http://localhost:3000/api/events/non_existent/export", {
+    headers: { ...sessionCookieFor("u_org") },
+  });
+  const res = await exportRouteGet(req, { params: { id: "non_existent" } });
+  assert.equal(res.status, 404);
+  const data = await res.json();
+  assert.equal(data.error, EVENT_NOT_FOUND_ERROR);
+});
+
+test("API: GET /api/events/[id]/export returns 403 when user is participant", async () => {
+  const req = new Request("http://localhost:3000/api/events/evt1/export", {
+    headers: { ...sessionCookieFor("u1") }, // u1 is a PARTICIPANT
+  });
+  const res = await exportRouteGet(req, { params: { id: "evt1" } });
+  assert.equal(res.status, 403);
+  const data = await res.json();
+  assert.match(data.error, /Access denied/);
+});
+
+test("API: GET /api/events/[id]/export returns 403 when user is a different organizer", async () => {
+  const req = new Request("http://localhost:3000/api/events/evt1/export", {
+    headers: { ...sessionCookieFor("u_org2") }, // u_org2 does NOT own evt1
+  });
+  const res = await exportRouteGet(req, { params: { id: "evt1" } });
+  assert.equal(res.status, 403);
+  const data = await res.json();
+  assert.match(data.error, /Access denied/);
+});
+
+test("API: GET /api/events/[id]/export?format=csv returns 200, CSV header, and participant rows for owner", async () => {
+  // Pre-condition: Event has registrants
+  mockDb.registrations.set("u1_evt1", {
+    id: "reg_evt1_u1",
+    userId: "u1",
+    eventId: "evt1",
+    status: RegistrationStatus.CONFIRMED,
+    createdAt: new Date("2026-10-02T10:00:00Z"),
+  });
+  mockDb.registrations.set("u2_evt1", {
+    id: "reg_evt1_u2",
+    userId: "u2",
+    eventId: "evt1",
+    status: RegistrationStatus.CONFIRMED,
+    createdAt: new Date("2026-10-02T11:00:00Z"),
+  });
+
+  const req = new Request("http://localhost:3000/api/events/evt1/export?format=csv", {
+    headers: { ...sessionCookieFor("u_org") },
+  });
+  const res = await exportRouteGet(req, { params: { id: "evt1" } });
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("Content-Type") || "", /text\/csv/);
+  assert.match(res.headers.get("Content-Disposition") || "", /attachment; filename="participants-tech-fest\.csv"/);
+
+  const csvText = await res.text();
+  assert.ok(csvText.includes("#,Name,Email,Status,Registration Date,Waitlist Position"));
+  assert.ok(csvText.includes("Amit Rao"));
+  assert.ok(csvText.includes("amit.rao@test.com"));
+  assert.ok(csvText.includes("Priya Nair"));
+  assert.ok(csvText.includes("priya.nair@test.com"));
+});
+
+test("API: GET /api/events/[id]/export?format=pdf returns 200 and valid PDF document for owner", async () => {
+  mockDb.registrations.set("u1_evt1", {
+    id: "reg_evt1_u1",
+    userId: "u1",
+    eventId: "evt1",
+    status: RegistrationStatus.CONFIRMED,
+    createdAt: new Date("2026-10-02T10:00:00Z"),
+  });
+
+  const req = new Request("http://localhost:3000/api/events/evt1/export?format=pdf", {
+    headers: { ...sessionCookieFor("u_org") },
+  });
+  const res = await exportRouteGet(req, { params: { id: "evt1" } });
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("Content-Type"), "application/pdf");
+  assert.match(res.headers.get("Content-Disposition") || "", /attachment; filename="participants-tech-fest\.pdf"/);
+
+  const arrayBuf = await res.arrayBuffer();
+  const buffer = Buffer.from(arrayBuf);
+  const pdfString = buffer.toString("latin1");
+  assert.ok(pdfString.startsWith("%PDF-1.4"));
+  assert.ok(pdfString.includes("%%EOF"));
+  assert.ok(pdfString.includes("Tech Fest"));
+  assert.ok(pdfString.includes("Amit Rao"));
+});
+
+test("API: GET /api/events/[id]/export?format=json returns full report payload for owner", async () => {
+  mockDb.registrations.set("u1_evt1", {
+    id: "reg_evt1_u1",
+    userId: "u1",
+    eventId: "evt1",
+    status: RegistrationStatus.CONFIRMED,
+    createdAt: new Date("2026-10-02T10:00:00Z"),
+  });
+
+  const req = new Request("http://localhost:3000/api/events/evt1/export?format=json", {
+    headers: { ...sessionCookieFor("u_org") },
+  });
+  const res = await exportRouteGet(req, { params: { id: "evt1" } });
+  assert.equal(res.status, 200);
+  const data = await res.json();
+  assert.ok(data.event);
+  assert.equal(data.confirmedCount, 1);
+  assert.equal(data.availableSeats, 99);
+  assert.equal(data.capacity, 100);
+  assert.equal(data.participants.length, 1);
+  assert.equal(data.participants[0].name, "Amit Rao");
+});
+
+test("API: GET /api/events/[id]/export allows admin to export participant list", async () => {
+  const req = new Request("http://localhost:3000/api/events/evt1/export?format=csv", {
+    headers: { ...sessionCookieFor("u_admin") }, // Admin role
+  });
+  const res = await exportRouteGet(req, { params: { id: "evt1" } });
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("Content-Type") || "", /text\/csv/);
+});
+
+test("API: GET /api/registrations?eventId=... returns 403 for non-owning organizer", async () => {
+  const req = new Request("http://localhost:3000/api/registrations?eventId=evt1", {
+    headers: { ...sessionCookieFor("u_org2") }, // Not the owner
+  });
+  const res = await registrationsRouteGet(req);
+  assert.equal(res.status, 403);
+  const data = await res.json();
+  assert.match(data.error, /Access denied/);
+});
+
+test("API: GET /api/registrations?eventId=... returns live database capacity totals for owner", async () => {
+  mockDb.registrations.set("u1_evt1", {
+    id: "reg_evt1_u1",
+    userId: "u1",
+    eventId: "evt1",
+    status: RegistrationStatus.CONFIRMED,
+    createdAt: new Date("2026-10-02T10:00:00Z"),
+  });
+
+  const req = new Request("http://localhost:3000/api/registrations?eventId=evt1", {
+    headers: { ...sessionCookieFor("u_org") },
+  });
+  const res = await registrationsRouteGet(req);
+  assert.equal(res.status, 200);
+  const data = await res.json();
+  assert.ok(Array.isArray(data.registrations));
+  assert.equal(data.confirmedCount, 1);
+  assert.equal(data.remainingSeats, 99);
+  assert.equal(data.availableSeats, 99);
+  assert.equal(data.capacity, 100);
+  assert.equal(data.isFull, false);
+});
+
+test("API: GET /api/registrations?eventId=...&format=csv is denied for a non-owning participant (IDOR regression)", async () => {
+  mockDb.registrations.set("u1_evt1", {
+    id: "reg_evt1_u1",
+    userId: "u1",
+    eventId: "evt1",
+    status: RegistrationStatus.CONFIRMED,
+    createdAt: new Date("2026-10-02T10:00:00Z"),
+  });
+
+  // u1 is a plain PARTICIPANT, not evt1's organizer (u_org) or an admin —
+  // the format=csv/pdf branch must deny this regardless of whether the
+  // caller happens to be registered for the event themselves.
+  const req = new Request("http://localhost:3000/api/registrations?eventId=evt1&format=csv", {
+    headers: { ...sessionCookieFor("u1") },
+  });
+  const res = await registrationsRouteGet(req);
+  assert.equal(res.status, 403);
+  const body = await res.text();
+  assert.doesNotMatch(body, /Amit Rao/, "participant PII must not leak to a non-owning caller");
+});
+
+test("API: GET /api/registrations?eventId=...&format=pdf is denied for a non-owning participant (IDOR regression)", async () => {
+  const req = new Request("http://localhost:3000/api/registrations?eventId=evt1&format=pdf", {
+    headers: { ...sessionCookieFor("u2") },
+  });
+  const res = await registrationsRouteGet(req);
+  assert.equal(res.status, 403);
+  assert.notEqual(res.headers.get("Content-Type"), "application/pdf");
+});
+
+test("API: GET /api/registrations?eventId=...&format=csv returns CSV export", async () => {
+  mockDb.registrations.set("u1_evt1", {
+    id: "reg_evt1_u1",
+    userId: "u1",
+    eventId: "evt1",
+    status: RegistrationStatus.CONFIRMED,
+    createdAt: new Date("2026-10-02T10:00:00Z"),
+  });
+
+  const req = new Request("http://localhost:3000/api/registrations?eventId=evt1&format=csv", {
+    headers: { ...sessionCookieFor("u_org") },
+  });
+  const res = await registrationsRouteGet(req);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("Content-Type") || "", /text\/csv/);
+  const text = await res.text();
+  assert.ok(text.includes("Amit Rao"));
+});
+
+test("API: GET /api/registrations?eventId=...&format=pdf returns PDF export", async () => {
+  mockDb.registrations.set("u1_evt1", {
+    id: "reg_evt1_u1",
+    userId: "u1",
+    eventId: "evt1",
+    status: RegistrationStatus.CONFIRMED,
+    createdAt: new Date("2026-10-02T10:00:00Z"),
+  });
+
+  const req = new Request("http://localhost:3000/api/registrations?eventId=evt1&format=pdf", {
+    headers: { ...sessionCookieFor("u_org") },
+  });
+  const res = await registrationsRouteGet(req);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("Content-Type"), "application/pdf");
+  const buf = Buffer.from(await res.arrayBuffer());
+  assert.ok(buf.toString("latin1").startsWith("%PDF-1.4"));
 });
