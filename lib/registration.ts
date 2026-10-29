@@ -7,6 +7,19 @@ import {
   eventReminderEmail,
 } from "@/lib/emailTemplates";
 import { sendMail } from "@/lib/mailer";
+import {
+  exportParticipantsToCSV,
+  exportParticipantsToPDF,
+  type ParticipantExportItem,
+  type EventExportInfo,
+} from "@/lib/export";
+
+export {
+  exportParticipantsToCSV,
+  exportParticipantsToPDF,
+  type ParticipantExportItem,
+  type EventExportInfo,
+};
 
 export const DUPLICATE_REGISTRATION_ERROR = "Already registered for this event";
 export const EVENT_CANCELLED_ERROR = "Cannot register for a cancelled event";
@@ -1544,6 +1557,9 @@ export async function getEventCapacity(
   confirmedCount: number;
   waitlistCount: number;
   remainingSeats: number;
+  availableSeats: number;
+  registeredParticipants: number;
+  activeRegistrations: number;
   isFull: boolean;
 } | null> {
   const event = await db.event.findUnique({
@@ -1571,6 +1587,12 @@ export async function getEventCapacity(
     confirmedCount = list.filter(
       (r: any) => r.status === RegistrationStatus.CONFIRMED || r.status === "CONFIRMED"
     ).length;
+  } else if (db.registrations instanceof Map) {
+    confirmedCount = Array.from(db.registrations.values()).filter(
+      (r: any) =>
+        r.eventId === event.id &&
+        (r.status === RegistrationStatus.CONFIRMED || r.status === "CONFIRMED")
+    ).length;
   }
 
   const waitlistCount = await getWaitlistCount(event.id, db);
@@ -1583,6 +1605,140 @@ export async function getEventCapacity(
     confirmedCount,
     waitlistCount,
     remainingSeats,
+    availableSeats: remainingSeats,
+    registeredParticipants: confirmedCount,
+    activeRegistrations: confirmedCount,
+    isFull,
+  };
+}
+
+/**
+ * Retrieve comprehensive participant report and metrics for an event (FR-010a).
+ * Returns event details, live database counts, and ordered participant records.
+ */
+export async function getEventParticipantReport(
+  eventId: string,
+  db: PrismaClientLike = prisma
+): Promise<{
+  event: EventExportInfo;
+  participants: ParticipantExportItem[];
+  capacity: number;
+  confirmedCount: number;
+  availableSeats: number;
+  waitlistCount: number;
+  isFull: boolean;
+} | null> {
+  let eventRecord: any = null;
+  if (typeof db.event?.findUnique === "function") {
+    eventRecord = await db.event.findUnique({
+      where: { id: eventId },
+      include: {
+        organizer: { select: { id: true, name: true, email: true } },
+      },
+    });
+  } else if (db.events instanceof Map) {
+    eventRecord = db.events.get(eventId);
+  }
+
+  if (!eventRecord) return null;
+
+  const capacityInfo = await getEventCapacity(eventId, db);
+  const capacity = capacityInfo ? capacityInfo.capacity : (eventRecord.capacity ?? 0);
+  const confirmedCount = capacityInfo ? capacityInfo.confirmedCount : 0;
+  const availableSeats = capacityInfo ? capacityInfo.availableSeats : Math.max(0, capacity - confirmedCount);
+  const waitlistCount = capacityInfo ? capacityInfo.waitlistCount : 0;
+  const isFull = capacityInfo ? capacityInfo.isFull : availableSeats <= 0;
+
+  // Retrieve raw registrations
+  let rawList: any[] = [];
+  if (typeof db.registration?.findMany === "function") {
+    rawList = await db.registration.findMany({
+      where: { eventId },
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+  } else if (db.registrations instanceof Map) {
+    rawList = Array.from(db.registrations.values()).filter(
+      (r: any) => r.eventId === eventId
+    );
+    rawList.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  }
+
+  // Calculate waitlist positions for waitlisted participants
+  const participants: ParticipantExportItem[] = [];
+  let waitlistCounter = 0;
+
+  // Sort: CONFIRMED first by registration time, then WAITLISTED by queue order, then CANCELLED
+  const statusPriority: Record<string, number> = {
+    CONFIRMED: 1,
+    confirmed: 1,
+    WAITLISTED: 2,
+    waitlisted: 2,
+    CANCELLED: 3,
+    cancelled: 3,
+  };
+
+  const sortedList = [...rawList].sort((a, b) => {
+    const prioA = statusPriority[a.status] || 99;
+    const prioB = statusPriority[b.status] || 99;
+    if (prioA !== prioB) return prioA - prioB;
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  });
+
+  for (const reg of sortedList) {
+    let u = reg.user;
+    if (!u && reg.userId) {
+      if (typeof db.user?.findUnique === "function") {
+        u = await db.user.findUnique({ where: { id: reg.userId } });
+      } else if (db.users instanceof Map) {
+        u = db.users.get(reg.userId);
+      }
+    }
+
+    const isWaitlisted =
+      reg.status === RegistrationStatus.WAITLISTED || reg.status === "WAITLISTED" || reg.status === "waitlisted";
+
+    let waitlistPos: number | null = null;
+    if (isWaitlisted) {
+      waitlistCounter++;
+      waitlistPos = waitlistCounter;
+    }
+
+    participants.push({
+      id: reg.id,
+      userId: reg.userId,
+      name: u?.name || "Anonymous Participant",
+      email: u?.email || "",
+      status: (reg.status || "CONFIRMED").toLowerCase(),
+      registeredAt: reg.createdAt || new Date(),
+      waitlistPosition: waitlistPos,
+    });
+  }
+
+  const eventInfo: EventExportInfo = {
+    id: eventRecord.id,
+    name: eventRecord.name || eventRecord.title || "Untitled Event",
+    date: eventRecord.date,
+    time: eventRecord.time,
+    venue: eventRecord.venue,
+    category: eventRecord.category,
+    capacity,
+    confirmedCount,
+    availableSeats,
+    waitlistCount,
+    status: eventRecord.status || (eventRecord.isCancelled ? "CANCELLED" : "ACTIVE"),
+    organizerName: eventRecord.organizer?.name || "Organizer",
+  };
+
+  return {
+    event: eventInfo,
+    participants,
+    capacity,
+    confirmedCount,
+    availableSeats,
+    waitlistCount,
     isFull,
   };
 }

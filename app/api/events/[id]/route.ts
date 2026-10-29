@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireOrganizer } from "@/lib/auth";
 import { inMemoryEvents } from "@/app/api/events/store";
+import { getEventCapacity } from "@/lib/registration";
 
 // ─────────────────────────────────────────────
 // GET /api/events/[id]  — Fetch a single event
@@ -23,6 +24,20 @@ export async function GET(
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
+    let capacityInfo = null;
+    try {
+      capacityInfo = await getEventCapacity(event.id);
+    } catch {
+      // Fallback if table uninitialized
+    }
+
+    const capacity = typeof event.capacity === "number" ? event.capacity : 0;
+    const confirmedCount = capacityInfo ? capacityInfo.confirmedCount : 0;
+    const remainingSeats = capacityInfo ? capacityInfo.remainingSeats : capacity;
+    const availableSeats = remainingSeats;
+    const waitlistCount = capacityInfo ? capacityInfo.waitlistCount : 0;
+    const isFull = capacityInfo ? capacityInfo.isFull : remainingSeats <= 0;
+
     return NextResponse.json({
       event: {
         id: event.id,
@@ -32,12 +47,18 @@ export async function GET(
         time: event.time,
         venue: event.venue,
         category: event.category,
-        capacity: event.capacity,
+        capacity,
         status: event.status,
         organizerId: event.organizerId,
         organizerName: event.organizer.name,
         createdAt: event.createdAt.toISOString(),
         updatedAt: event.updatedAt.toISOString(),
+        confirmedCount,
+        registeredCount: confirmedCount,
+        remainingSeats,
+        availableSeats,
+        waitlistCount,
+        isFull,
       },
     });
   } catch (err) {

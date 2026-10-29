@@ -19,9 +19,12 @@ export interface StoredEvent {
   createdAt: string;
   updatedAt: string;
   // Only populated by the real DB path (FR-008 capacity, FR-007
-  // registration, FR-009a waitlist) — undefined on the in-memory fallback,
+  // registration, FR-009a waitlist, FR-010 reporting) — undefined on the in-memory fallback,
   // where there's no Registration table to count against.
   remainingSeats?: number;
+  availableSeats?: number;
+  confirmedCount?: number;
+  registeredCount?: number;
   isFull?: boolean;
   registered?: boolean;
   waitlisted?: boolean;
