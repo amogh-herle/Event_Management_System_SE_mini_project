@@ -2286,3 +2286,62 @@ test("FR-010a: Edge Case - Event with 0 registrants exports clean empty roster w
   assert.ok(pdfString.startsWith("%PDF-1.4"));
   assert.ok(pdfString.includes("No participants registered"));
 });
+
+test("FR-010a: CSV export neutralizes formula-injection payloads in participant-controlled fields", async () => {
+  const participants: any[] = [
+    {
+      id: "reg_inj_1",
+      userId: "user_inj_1",
+      name: '=HYPERLINK("http://evil.example","click me")',
+      email: "attacker@test.com",
+      status: "confirmed",
+      registeredAt: new Date("2026-10-02T10:00:00Z"),
+      waitlistPosition: null,
+    },
+    {
+      id: "reg_inj_2",
+      userId: "user_inj_2",
+      name: "+1+1",
+      email: "-2+3",
+      status: "confirmed",
+      registeredAt: new Date("2026-10-02T10:00:00Z"),
+      waitlistPosition: null,
+    },
+  ];
+
+  const csv = exportParticipantsToCSV(participants, { name: "Injection Test Event" } as any);
+  const lines = csv.trim().split("\r\n");
+
+  // A spreadsheet only treats a cell as a formula when the FIRST character
+  // (after unwrapping quotes) is =, +, -, or @ — the leading single quote
+  // this fix inserts must survive the CSV quoting so that character is
+  // never first in the field.
+  assert.ok(lines[1].includes('"\'=HYPERLINK'), "leading = must be neutralized with a leading quote");
+  assert.ok(lines[2].includes("'+1+1"), "leading + must be neutralized");
+  assert.ok(lines[2].includes("'-2+3"), "leading - in email field must be neutralized");
+});
+
+test("FR-010a: PDF export renders accented Latin-1 names instead of replacing them with '?'", async () => {
+  const participants: any[] = [
+    {
+      id: "reg_unicode_1",
+      userId: "user_unicode_1",
+      name: "José Zoë Müller",
+      email: "jose@test.com",
+      status: "confirmed",
+      registeredAt: new Date("2026-10-02T10:00:00Z"),
+      waitlistPosition: null,
+    },
+  ];
+
+  const pdfBuffer = exportParticipantsToPDF(participants, { name: "Unicode Test Event" } as any);
+  const pdfString = pdfBuffer.toString("latin1");
+
+  assert.ok(pdfString.startsWith("%PDF-1.4"));
+  // The accented characters must appear as themselves (latin1 byte, per
+  // the declared /Encoding /WinAnsiEncoding), not collapsed to "?".
+  assert.ok(pdfString.includes("Jos\xe9"), "é must render, not fall back to '?'");
+  assert.ok(pdfString.includes("Zo\xeb"), "ë must render, not fall back to '?'");
+  assert.ok(pdfString.includes("M\xfcller"), "ü must render, not fall back to '?'");
+  assert.ok(pdfString.includes("/Encoding /WinAnsiEncoding"), "fonts must declare WinAnsiEncoding");
+});
