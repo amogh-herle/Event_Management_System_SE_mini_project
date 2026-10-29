@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { getAuthUserFromRequest } from "@/lib/auth";
+import { getRealSessionUser } from "@/lib/auth";
 import {
   getEventParticipantReport,
   exportParticipantsToCSV,
@@ -18,8 +18,10 @@ export async function GET(
   const { searchParams } = new URL(request.url);
   const format = (searchParams.get("format") || "csv").toLowerCase();
 
-  // 1. Authentication Check (NFR-004)
-  const sessionUser = await getAuthUserFromRequest(request);
+  // 1. Authentication Check (NFR-004) — a real session only; this route
+  // hands out participant PII (names + emails), so the spoofable demo
+  // x-user-role header must never be trusted here.
+  const sessionUser = await getRealSessionUser(request);
   if (!sessionUser) {
     return NextResponse.json({ error: AUTH_REQUIRED_ERROR }, { status: 401 });
   }

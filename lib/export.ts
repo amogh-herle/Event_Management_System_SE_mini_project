@@ -34,10 +34,18 @@ export interface EventExportInfo {
  * Escapes a single CSV value according to RFC 4180:
  * Encloses in quotes if it contains commas, double quotes, or newlines.
  * Escapes internal double quotes by doubling them ("").
+ *
+ * Also guards against CSV/formula injection: a value starting with =, +,
+ * -, @, or a tab/CR gets reinterpreted as a formula by Excel/Sheets when
+ * the file is opened, so participant-controlled fields (name, email) are
+ * neutralized by prefixing a single quote before that check runs.
  */
 export function escapeCsvField(val: unknown): string {
   if (val === null || val === undefined) return "";
-  const str = String(val);
+  let str = String(val);
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = `'${str}`;
+  }
   if (str.includes('"') || str.includes(",") || str.includes("\n") || str.includes("\r")) {
     return `"${str.replace(/"/g, '""')}"`;
   }
@@ -92,7 +100,15 @@ export function exportParticipantsToCSV(
 /**
  * Escapes text for PDF literal strings enclosed in parentheses (...).
  * Characters '(', ')', and '\' must be escaped with a backslash.
- * Non-ASCII characters are safely converted or normalized to maintain valid PDF.
+ *
+ * The document declares /Encoding /WinAnsiEncoding on its fonts and the
+ * final buffer is written out latin1 (see exportParticipantsToPDF), so a
+ * character in the U+00A0-U+00FF range is passed through as-is: WinAnsi
+ * and Unicode agree on that range, and encoding the string latin1 writes
+ * each of those code points out as the single byte the font expects —
+ * e.g. "José"/"Zoë" render correctly instead of "Jos?"/"Zo?". Anything
+ * outside Latin-1 (CJK, emoji, etc.) still has no glyph in this base-14
+ * font and falls back to "?".
  */
 function escapePdfText(str: string): string {
   if (!str) return "";
@@ -105,6 +121,8 @@ function escapePdfText(str: string): string {
       if (ch === "“" || ch === "”") return '"';
       if (ch === "‘" || ch === "’") return "'";
       if (ch === "–" || ch === "—") return "-";
+      const code = ch.charCodeAt(0);
+      if (code >= 0xa0 && code <= 0xff) return ch;
       return "?";
     });
 }
@@ -314,16 +332,17 @@ export function exportParticipantsToPDF(
   const pagesKidsStr = pageObjIds.map((id) => `${id} 0 R`).join(" ");
   objects.push(`<< /Type /Pages /Kids [ ${pagesKidsStr} ] /Count ${totalPages} >>`);
 
-  // Obj 3: Font Helvetica
-  objects.push(`<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>`);
+  // Obj 3: Font Helvetica (WinAnsiEncoding so the Latin-1 bytes escapePdfText
+  // passes through for accented characters render as the intended glyph)
+  objects.push(`<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>`);
 
   // Obj 4: Font Helvetica-Bold
-  objects.push(`<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>`);
+  objects.push(`<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>`);
 
   // Page stream and page objects
   for (let i = 0; i < totalPages; i++) {
     const streamBody = pageStreamContents[i];
-    const streamLen = Buffer.byteLength(streamBody, "utf-8");
+    const streamLen = Buffer.byteLength(streamBody, "latin1");
     const streamObj = `<< /Length ${streamLen} >>\nstream\n${streamBody}\nendstream`;
     objects.push(streamObj); // Obj 5 + i*2
 
@@ -347,11 +366,11 @@ export function exportParticipantsToPDF(
   const offsets: number[] = [0];
 
   for (let i = 0; i < objects.length; i++) {
-    offsets.push(Buffer.byteLength(pdf, "utf-8"));
+    offsets.push(Buffer.byteLength(pdf, "latin1"));
     pdf += `${i + 1} 0 obj\n${objects[i]}\nendobj\n`;
   }
 
-  const startXref = Buffer.byteLength(pdf, "utf-8");
+  const startXref = Buffer.byteLength(pdf, "latin1");
   pdf += "xref\n";
   pdf += `0 ${objects.length + 1}\n`;
   pdf += "0000000000 65535 f \n";
@@ -366,5 +385,5 @@ export function exportParticipantsToPDF(
   pdf += `${startXref}\n`;
   pdf += "%%EOF\n";
 
-  return Buffer.from(pdf, "utf-8");
+  return Buffer.from(pdf, "latin1");
 }

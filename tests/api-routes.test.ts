@@ -1098,6 +1098,36 @@ test("API: GET /api/registrations?eventId=... returns live database capacity tot
   assert.equal(data.isFull, false);
 });
 
+test("API: GET /api/registrations?eventId=...&format=csv is denied for a non-owning participant (IDOR regression)", async () => {
+  mockDb.registrations.set("u1_evt1", {
+    id: "reg_evt1_u1",
+    userId: "u1",
+    eventId: "evt1",
+    status: RegistrationStatus.CONFIRMED,
+    createdAt: new Date("2026-10-02T10:00:00Z"),
+  });
+
+  // u1 is a plain PARTICIPANT, not evt1's organizer (u_org) or an admin —
+  // the format=csv/pdf branch must deny this regardless of whether the
+  // caller happens to be registered for the event themselves.
+  const req = new Request("http://localhost:3000/api/registrations?eventId=evt1&format=csv", {
+    headers: { ...sessionCookieFor("u1") },
+  });
+  const res = await registrationsRouteGet(req);
+  assert.equal(res.status, 403);
+  const body = await res.text();
+  assert.doesNotMatch(body, /Amit Rao/, "participant PII must not leak to a non-owning caller");
+});
+
+test("API: GET /api/registrations?eventId=...&format=pdf is denied for a non-owning participant (IDOR regression)", async () => {
+  const req = new Request("http://localhost:3000/api/registrations?eventId=evt1&format=pdf", {
+    headers: { ...sessionCookieFor("u2") },
+  });
+  const res = await registrationsRouteGet(req);
+  assert.equal(res.status, 403);
+  assert.notEqual(res.headers.get("Content-Type"), "application/pdf");
+});
+
 test("API: GET /api/registrations?eventId=...&format=csv returns CSV export", async () => {
   mockDb.registrations.set("u1_evt1", {
     id: "reg_evt1_u1",

@@ -12,7 +12,7 @@ import {
   exportParticipantsToPDF,
   AUTH_REQUIRED_ERROR,
 } from "@/lib/registration";
-import { getAuthUserFromRequest, ensureDemoUserRow } from "@/lib/auth";
+import { getAuthUserFromRequest, getRealSessionUser, ensureDemoUserRow } from "@/lib/auth";
 
 export async function POST(request: Request) {
   let body: unknown;
@@ -93,7 +93,11 @@ export async function GET(request: Request) {
         );
       }
     } catch {
-      // In-memory or offline DB fallback
+      // Ownership could not be verified — deny rather than silently allow.
+      return NextResponse.json(
+        { error: "Unable to verify event ownership" },
+        { status: 500 }
+      );
     }
   }
 
@@ -107,6 +111,44 @@ export async function GET(request: Request) {
   }
 
   if (eventId && (format === "csv" || format === "pdf")) {
+    // Exporting participant PII (names + emails) requires a REAL session —
+    // the demo x-user-role header must never be trusted here — and the
+    // caller must be this event's organizer or an admin. Any failure below
+    // denies access; it never falls through to "allow".
+    const realUser = await getRealSessionUser(request);
+    if (!realUser) {
+      return NextResponse.json({ error: AUTH_REQUIRED_ERROR }, { status: 401 });
+    }
+
+    let exportEvent: { organizerId: string } | null;
+    try {
+      exportEvent = await prisma.event.findUnique({
+        where: { id: eventId },
+        select: { organizerId: true },
+      });
+    } catch {
+      return NextResponse.json(
+        { error: "Unable to verify event ownership" },
+        { status: 500 }
+      );
+    }
+
+    if (!exportEvent) {
+      return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    }
+
+    const isOwner = exportEvent.organizerId === realUser.id;
+    const isAdmin = realUser.role === Role.ADMIN;
+    if (!isOwner && !isAdmin) {
+      return NextResponse.json(
+        {
+          error:
+            "Access denied: Only the event organizer or an admin can export participant lists",
+        },
+        { status: 403 }
+      );
+    }
+
     const report = await getEventParticipantReport(eventId, prisma);
     if (!report) {
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
