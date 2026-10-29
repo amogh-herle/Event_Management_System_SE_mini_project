@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+// FR-006c: always read the current list — without this, Next.js renders
+// this route once at build time, so admin category changes would never
+// reach the event forms or filters until the next deploy.
+export const dynamic = "force-dynamic";
+
 const DEFAULT_CATEGORIES = [
   "Technology",
   "Workshops",
