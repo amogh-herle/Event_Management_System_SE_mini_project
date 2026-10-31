@@ -5,6 +5,8 @@ import {
   registrationConfirmationEmail,
   registrationCancellationEmail,
   eventReminderEmail,
+  eventCancelledEmail,
+  eventUpdatedEmail,
 } from "@/lib/emailTemplates";
 import { sendMail } from "@/lib/mailer";
 import { isEventDatePast } from "@/lib/eventDates";
@@ -106,6 +108,12 @@ export interface UpdateEventResult {
     updatedAt: Date;
   };
   promotedCount?: number;
+  // Users promoted off the waitlist by this same edit (capacity increase)
+  // already get a WAITLIST_PROMOTION email — see notifyEventParticipants's
+  // excludeUserIds, which keeps them from also getting a confusing
+  // EVENT_UPDATE email claiming their registration is unchanged.
+  promotedUserIds?: string[];
+  changes?: EventChange[];
 }
 
 export type PrismaClientLike = any;
@@ -236,7 +244,9 @@ export type NotificationType =
   | "WAITLIST_PROMOTION"
   | "REGISTRATION_CONFIRMATION"
   | "CANCELLATION_CONFIRMATION"
-  | "EVENT_REMINDER";
+  | "EVENT_REMINDER"
+  | "EVENT_UPDATE"
+  | "EVENT_CANCELLATION";
 
 export interface DispatchedNotification {
   to: string;
@@ -533,6 +543,222 @@ export async function sendEventReminderNotification(
     console.error(`[notifications] failed to send event reminder email to ${email}:`, err);
     return false;
   }
+}
+
+// ─────────────────────────────────────────────
+// FR-005b: Notify participants on event update / cancellation
+// ─────────────────────────────────────────────
+
+export interface EventChange {
+  field: string;
+  label: string;
+  before?: string;
+  after: string;
+}
+
+interface EventDetailsLike {
+  name?: string | null;
+  description?: string | null;
+  date?: Date | string | null;
+  time?: string | null;
+  venue?: string | null;
+  category?: string | null;
+}
+
+function normalizeEventDate(d: Date | string | null | undefined): string {
+  if (!d) return "";
+  const parsed = new Date(d);
+  return isNaN(parsed.getTime()) ? String(d) : parsed.toISOString().slice(0, 10);
+}
+
+/**
+ * Lists the participant-facing details that differ between two versions of
+ * an event. Capacity is intentionally left out — it doesn't change anything
+ * for someone who already holds a registration.
+ */
+export function diffEventDetails(before: EventDetailsLike, after: EventDetailsLike): EventChange[] {
+  const changes: EventChange[] = [];
+  const text = (v: string | null | undefined) => (v ?? "").trim();
+
+  if (text(before.name) !== text(after.name)) {
+    changes.push({ field: "name", label: "Event name", before: text(before.name), after: text(after.name) });
+  }
+  if (normalizeEventDate(before.date) !== normalizeEventDate(after.date)) {
+    changes.push({
+      field: "date",
+      label: "Date",
+      before: normalizeEventDate(before.date),
+      after: normalizeEventDate(after.date),
+    });
+  }
+  if (text(before.time) !== text(after.time)) {
+    changes.push({ field: "time", label: "Time", before: text(before.time), after: text(after.time) });
+  }
+  if (text(before.venue) !== text(after.venue)) {
+    changes.push({ field: "venue", label: "Venue", before: text(before.venue), after: text(after.venue) });
+  }
+  if (text(before.category) !== text(after.category)) {
+    changes.push({ field: "category", label: "Category", before: text(before.category), after: text(after.category) });
+  }
+  if (text(before.description) !== text(after.description)) {
+    // Descriptions can be long — show only the new text, not a before/after pair.
+    changes.push({ field: "description", label: "Description", after: text(after.description) });
+  }
+
+  return changes;
+}
+
+export interface NotifyEventParticipantsParams {
+  kind: "UPDATE" | "CANCELLATION";
+  event: {
+    id: string;
+    name?: string;
+    title?: string;
+    date?: Date | string;
+    time?: string;
+    venue?: string;
+    organizerId?: string;
+  };
+  changes?: EventChange[];
+  // Users to skip entirely — e.g. ones already emailed a WAITLIST_PROMOTION
+  // notice by the same request, who shouldn't also get a confusing
+  // EVENT_UPDATE email claiming their registration is unchanged.
+  excludeUserIds?: string[];
+}
+
+/**
+ * Counts of notification *attempts*. `sent` means the mail transport
+ * accepted the message — not that it reached the participant's inbox.
+ */
+export interface NotifyEventParticipantsResult {
+  recipients: number;
+  sent: number;
+  failed: number;
+}
+
+/**
+ * Emails every participant holding an active (CONFIRMED or WAITLISTED)
+ * registration for the event about an update or a cancellation. Callers
+ * must only invoke this after the event change has been committed.
+ *
+ * Never throws: a failed lookup or a failed send is logged and counted,
+ * so a notification problem can't turn a successful update/cancellation
+ * into an error response. Each participant is notified at most once per
+ * call, even if they somehow hold more than one registration row.
+ */
+export async function notifyEventParticipants(
+  params: NotifyEventParticipantsParams,
+  db: PrismaClientLike = prisma
+): Promise<NotifyEventParticipantsResult> {
+  const { kind, event } = params;
+  const changes = params.changes ?? [];
+  const excludeUserIds = new Set(params.excludeUserIds ?? []);
+  const result: NotifyEventParticipantsResult = { recipients: 0, sent: 0, failed: 0 };
+
+  if (kind === "UPDATE" && changes.length === 0) return result;
+
+  let regs: any[] = [];
+  try {
+    if (typeof db.registration?.findMany === "function") {
+      regs = await db.registration.findMany({
+        where: {
+          eventId: event.id,
+          status: { in: [RegistrationStatus.CONFIRMED, RegistrationStatus.WAITLISTED] },
+        },
+        include: { user: { select: { id: true, name: true, email: true } } },
+      });
+    } else if (db.registrations instanceof Map) {
+      regs = Array.from(db.registrations.values()).filter((r: any) => r.eventId === event.id);
+    }
+  } catch (err) {
+    console.error(`[notifications] failed to load participants for event ${event.id}:`, err);
+    return result;
+  }
+
+  // Defensive re-filter: a fallback query path (or a test mock) may not
+  // honor the where clause above. Also excludes the organizer themself
+  // (holding a registration on their own event is possible — nothing
+  // stops it server-side) and anyone already notified of a promotion by
+  // this same request.
+  const active = regs.filter(
+    (r: any) =>
+      r.eventId === event.id &&
+      r.userId !== event.organizerId &&
+      !excludeUserIds.has(r.userId) &&
+      (r.status === RegistrationStatus.CONFIRMED ||
+        r.status === "CONFIRMED" ||
+        r.status === RegistrationStatus.WAITLISTED ||
+        r.status === "WAITLISTED")
+  );
+
+  const eventName = event.name ?? event.title ?? "Event";
+  const seen = new Set<string>();
+
+  for (const reg of active) {
+    let user = reg.user;
+    if (!user && reg.userId) {
+      try {
+        if (typeof db.user?.findUnique === "function") {
+          user = await db.user.findUnique({ where: { id: reg.userId } });
+        } else if (db.users instanceof Map) {
+          user = db.users.get(reg.userId);
+        }
+      } catch (err) {
+        console.error(`[notifications] failed to load participant ${reg.userId}:`, err);
+      }
+    }
+
+    const email: string | undefined = user?.email;
+    const dedupeKey = email ? email.toLowerCase() : `user:${reg.userId}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    result.recipients++;
+
+    const name = user?.name ?? "Participant";
+    const { subject, html } =
+      kind === "CANCELLATION"
+        ? eventCancelledEmail(name, eventName, event.date, event.time, event.venue)
+        : eventUpdatedEmail(name, eventName, changes, event.date, event.time, event.venue);
+
+    const notification: DispatchedNotification = {
+      to: email ?? "",
+      subject,
+      type: kind === "CANCELLATION" ? "EVENT_CANCELLATION" : "EVENT_UPDATE",
+      userId: reg.userId,
+      eventId: event.id,
+      timestamp: new Date(),
+      details: {
+        eventName,
+        eventDate: event.date,
+        eventTime: event.time,
+        eventVenue: event.venue,
+        ...(kind === "UPDATE" ? { changes } : {}),
+      },
+    };
+
+    for (const listener of allNotificationListeners) {
+      try {
+        await listener(notification);
+      } catch (e) {
+        console.error("[notifications] listener error:", e);
+      }
+    }
+
+    if (!email) {
+      result.failed++;
+      continue;
+    }
+
+    try {
+      await sendMail(email, subject, html);
+      result.sent++;
+    } catch (err) {
+      result.failed++;
+      console.error(`[notifications] failed to send event ${kind.toLowerCase()} email to ${email}:`, err);
+    }
+  }
+
+  return result;
 }
 
 export interface SendEventRemindersOptions {
@@ -1658,6 +1884,7 @@ export async function updateEventDetails(
       });
 
       let promotedCount = 0;
+      const promotedUserIds: string[] = [];
       const newCapacity = typeof updated.capacity === "number" ? updated.capacity : 0;
       let openSeats = newCapacity - confirmedCount;
 
@@ -1715,6 +1942,7 @@ export async function updateEventDetails(
 
         notifications.push(() => sendWaitlistPromotionNotification(promoted, db));
         promotedCount++;
+        promotedUserIds.push(promoted.userId);
         openSeats--;
       }
 
@@ -1738,6 +1966,11 @@ export async function updateEventDetails(
           updatedAt: updated.updatedAt,
         },
         promotedCount,
+        promotedUserIds,
+        // FR-005b: computed from the exact before/after rows this
+        // transaction committed, rather than a separate pre-fetch outside
+        // the lock, which a P2034 retry (or a concurrent edit) could skew.
+        changes: diffEventDetails(event, updated),
       };
     })
   );
@@ -1753,6 +1986,79 @@ export async function updateEventDetails(
   }
 
   return result;
+}
+
+export interface CancelEventResult {
+  success: boolean;
+  statusCode: number;
+  error?: string;
+  event?: {
+    id: string;
+    name: string;
+    date: Date;
+    time: string;
+    venue: string;
+    status: EventStatus | string;
+    organizerId: string;
+    updatedAt: Date;
+  };
+}
+
+/**
+ * Cancel an event (FR-005a). Locked and transactional like
+ * updateEventDetails/registerForEvent/cancelRegistration — a bare
+ * `UPDATE ... WHERE status = 'ACTIVE'` is enough to stop two concurrent
+ * cancels from both succeeding, but it's the only event-mutating path in
+ * this file that didn't take the app-level lock, leaving it the one place
+ * a concurrent registerForEvent call could land outside the serialization
+ * every other path gets. The transaction's own read of event.status is
+ * what FR-005b's "notify only once, only after commit" guarantee relies
+ * on, same as everywhere else in this file.
+ */
+export async function cancelEvent(
+  params: { eventId: string; organizerId: string },
+  db: PrismaClientLike = prisma
+): Promise<CancelEventResult> {
+  const { eventId, organizerId } = params;
+  const normalizedEventId = eventId.trim();
+
+  return withEventLock(normalizedEventId, () =>
+    withSerializableTransaction(db, async (tx) => {
+      const event = await tx.event.findUnique({ where: { id: normalizedEventId } });
+
+      if (!event) {
+        return { success: false, statusCode: 404, error: EVENT_NOT_FOUND_ERROR };
+      }
+
+      if (event.organizerId !== organizerId) {
+        return { success: false, statusCode: 403, error: EVENT_EDIT_FORBIDDEN_ERROR };
+      }
+
+      if (isEventCancelled(event.status)) {
+        return { success: false, statusCode: 409, error: "Event is already cancelled" };
+      }
+
+      const updated = await tx.event.update({
+        where: { id: normalizedEventId },
+        data: { status: "CANCELLED" },
+      });
+
+      return {
+        success: true,
+        statusCode: 200,
+        event: {
+          id: updated.id,
+          name: updated.name,
+          date: updated.date,
+          time: updated.time,
+          venue: updated.venue,
+          status: updated.status,
+          organizerId: updated.organizerId,
+          updatedAt: updated.updatedAt,
+        },
+      };
+    })
+  );
 }
 
 /**

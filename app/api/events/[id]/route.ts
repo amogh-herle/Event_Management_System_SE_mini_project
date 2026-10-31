@@ -7,11 +7,38 @@ import { StoredEvent, inMemoryEvents } from "@/app/api/events/store";
 import {
   getEventCapacity,
   updateEventDetails,
+  cancelEvent,
+  notifyEventParticipants,
   CANNOT_EDIT_CANCELLED_EVENT_ERROR,
   CANNOT_EDIT_PAST_EVENT_ERROR,
   EVENT_EDIT_CONFLICT_ERROR,
+  type NotifyEventParticipantsParams,
+  type NotifyEventParticipantsResult,
 } from "@/lib/registration";
 import { isEventDatePast } from "@/lib/eventDates";
+
+// FR-005b: the event change has already been committed when this runs, so
+// a notification failure must never surface as an error response (or fall
+// into the handlers' DB-unavailable fallback paths).
+async function notifyParticipantsSafely(
+  params: NotifyEventParticipantsParams
+): Promise<NotifyEventParticipantsResult> {
+  try {
+    return await notifyEventParticipants(params);
+  } catch (err) {
+    console.error("[events/:id] participant notification failed:", err);
+    return { recipients: 0, sent: 0, failed: 0 };
+  }
+}
+
+// The in-memory fallback has no Registration table (see store.ts), so there
+// is nobody it could notify. It still returns the same `notifications` field
+// as the DB path, so clients see one response shape in both modes.
+const FALLBACK_NOTIFICATIONS: NotifyEventParticipantsResult = {
+  recipients: 0,
+  sent: 0,
+  failed: 0,
+};
 
 // ─────────────────────────────────────────────
 // GET /api/events/[id]  — Fetch a single event
@@ -117,36 +144,24 @@ export async function PATCH(
 
   // ── Database path ──────────────────────────────────────────────────────────
   try {
-    const event = await prisma.event.findUnique({ where: { id } });
+    const result = await cancelEvent({ eventId: id, organizerId: auth.user.id });
 
-    if (!event) {
-      return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    if (!result.success || !result.event) {
+      return NextResponse.json({ error: result.error }, { status: result.statusCode });
     }
 
-    // Only the owning organizer may cancel (AC: FR-005a ownership guard)
-    if (event.organizerId !== auth.user.id) {
-      return NextResponse.json(
-        { error: "Forbidden: you are not the organizer of this event" },
-        { status: 403 }
-      );
-    }
-
-    if (event.status === "CANCELLED") {
-      return NextResponse.json(
-        { error: "Event is already cancelled" },
-        { status: 409 }
-      );
-    }
-
-    const updated = await prisma.event.update({
-      where: { id },
-      data: { status: "CANCELLED" },
-      include: { organizer: { select: { id: true, name: true, email: true } } },
-    });
+    const updated = result.event;
 
     // Mirror to in-memory store
     const idx = inMemoryEvents.findIndex((e) => e.id === id);
     if (idx !== -1) inMemoryEvents[idx].status = "CANCELLED";
+
+    // FR-005b: notify registered participants, only once the cancellation
+    // has been committed. Registrations themselves are left untouched.
+    const notifications = await notifyParticipantsSafely({
+      kind: "CANCELLATION",
+      event: updated,
+    });
 
     return NextResponse.json({
       event: {
@@ -155,6 +170,7 @@ export async function PATCH(
         status: updated.status,
         updatedAt: updated.updatedAt.toISOString(),
       },
+      notifications,
     });
   } catch (err) {
     // Only degrade to the in-memory store for a genuinely unreachable
@@ -191,6 +207,7 @@ export async function PATCH(
           status: inMemoryEvents[idx].status,
           updatedAt: inMemoryEvents[idx].updatedAt,
         },
+        notifications: FALLBACK_NOTIFICATIONS,
       });
     }
 
@@ -293,8 +310,24 @@ export async function PUT(
     const idx = inMemoryEvents.findIndex((e) => e.id === id);
     if (idx !== -1) inMemoryEvents[idx] = { ...inMemoryEvents[idx], ...formatted };
 
+    // FR-005b: notify registered participants of what changed, only after
+    // the update has been committed. A save with no participant-facing
+    // changes (e.g. capacity only) sends nothing. The before/after diff
+    // comes from updateEventDetails itself, computed from the exact rows
+    // its own transaction committed.
+    const notifications = await notifyParticipantsSafely({
+      kind: "UPDATE",
+      event: updated,
+      changes: result.changes ?? [],
+      // Anyone this same edit already promoted off the waitlist gets a
+      // WAITLIST_PROMOTION email, not a second, misleading "unchanged"
+      // EVENT_UPDATE one.
+      excludeUserIds: result.promotedUserIds ?? [],
+    });
+
     return NextResponse.json({
       event: formatted,
+      notifications,
       ...(result.promotedCount ? { promotedCount: result.promotedCount } : {}),
     });
   } catch (err) {
@@ -350,7 +383,10 @@ export async function PUT(
         updatedAt: new Date().toISOString(),
       };
 
-      return NextResponse.json({ event: inMemoryEvents[idx] });
+      return NextResponse.json({
+        event: inMemoryEvents[idx],
+        notifications: FALLBACK_NOTIFICATIONS,
+      });
     }
 
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {

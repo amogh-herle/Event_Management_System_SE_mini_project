@@ -243,7 +243,8 @@ export default function EditEventPage() {
             <h1>Edit Event</h1>
             <p className="lede">
               Update the event&apos;s details, schedule, venue, category, or capacity. Existing
-              registrations are kept.
+              registrations are kept, and registered participants are notified of changes
+              by email.
             </p>
           </div>
 
