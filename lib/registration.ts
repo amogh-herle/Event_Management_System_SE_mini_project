@@ -9,6 +9,7 @@ import {
   eventUpdatedEmail,
 } from "@/lib/emailTemplates";
 import { sendMail } from "@/lib/mailer";
+import { isEventDatePast } from "@/lib/eventDates";
 import {
   exportParticipantsToCSV,
   exportParticipantsToPDF,
@@ -36,6 +37,7 @@ export const REGISTRATION_NOT_FOUND_ERROR = "Registration not found";
 export const CANNOT_CANCEL_CANCELLED_EVENT_ERROR = "Cannot cancel registration for a cancelled event";
 export const EVENT_EDIT_FORBIDDEN_ERROR = "Forbidden: you are not the organizer of this event";
 export const CANNOT_EDIT_CANCELLED_EVENT_ERROR = "Cancelled events cannot be edited";
+export const CANNOT_EDIT_PAST_EVENT_ERROR = "Past events cannot be edited";
 export const EVENT_EDIT_CONFLICT_ERROR =
   "This event was changed elsewhere — reload and try again";
 
@@ -1806,6 +1808,10 @@ export async function updateEventDetails(
 
       if (isEventCancelled(event.status)) {
         return { success: false, statusCode: 409, error: CANNOT_EDIT_CANCELLED_EVENT_ERROR };
+      }
+
+      if (isEventDatePast(event.date)) {
+        return { success: false, statusCode: 409, error: CANNOT_EDIT_PAST_EVENT_ERROR };
       }
 
       if (

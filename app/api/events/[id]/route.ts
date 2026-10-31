@@ -9,9 +9,13 @@ import {
   updateEventDetails,
   cancelEvent,
   notifyEventParticipants,
+  CANNOT_EDIT_CANCELLED_EVENT_ERROR,
+  CANNOT_EDIT_PAST_EVENT_ERROR,
+  EVENT_EDIT_CONFLICT_ERROR,
   type NotifyEventParticipantsParams,
   type NotifyEventParticipantsResult,
 } from "@/lib/registration";
+import { isEventDatePast } from "@/lib/eventDates";
 
 // FR-005b: the event change has already been committed when this runs, so
 // a notification failure must never surface as an error response (or fall
@@ -332,9 +336,23 @@ export async function PUT(
 
       if (inMemoryEvents[idx].status === "CANCELLED") {
         return NextResponse.json(
-          { error: "Cancelled events cannot be edited" },
+          { error: CANNOT_EDIT_CANCELLED_EVENT_ERROR },
           { status: 409 }
         );
+      }
+
+      if (isEventDatePast(inMemoryEvents[idx].date)) {
+        return NextResponse.json({ error: CANNOT_EDIT_PAST_EVENT_ERROR }, { status: 409 });
+      }
+
+      // Same optimistic-concurrency check as the DB path, so a stale edit
+      // doesn't silently clobber a newer one just because the DB is down.
+      if (
+        expectedUpdatedAt &&
+        new Date(expectedUpdatedAt).getTime() !==
+          new Date(inMemoryEvents[idx].updatedAt).getTime()
+      ) {
+        return NextResponse.json({ error: EVENT_EDIT_CONFLICT_ERROR }, { status: 409 });
       }
 
       // Unlike the DB path, this fallback cannot reject a capacity drop

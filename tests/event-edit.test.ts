@@ -4,6 +4,7 @@ import { GET as eventRouteGet, PUT as eventRoutePut } from "../app/api/events/[i
 import { prisma } from "../lib/prisma";
 import { Prisma, RegistrationStatus, EventStatus, Role } from "@prisma/client";
 import { createSessionValue } from "../lib/session";
+import { inMemoryEvents, StoredEvent } from "../app/api/events/store";
 
 process.env.SESSION_SECRET ||= "test-only-session-secret";
 
@@ -11,6 +12,15 @@ process.env.SESSION_SECRET ||= "test-only-session-secret";
 
 function sessionCookieFor(userId: string) {
   return { Cookie: `session=${createSessionValue(userId)}` };
+}
+
+// Event dates are relative to today so the "past events can't be edited"
+// rule doesn't start failing these tests once a hard-coded date goes by.
+function utcDayOffset(days: number) {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d;
 }
 
 function createMockDb() {
@@ -27,7 +37,7 @@ function createMockDb() {
 
   const baseEvent = {
     description: "Annual technical symposium",
-    date: new Date("2026-11-10T00:00:00Z"),
+    date: utcDayOffset(30),
     time: "10:00 AM",
     venue: "Main Auditorium",
     category: "Technology",
@@ -351,4 +361,105 @@ test("FR-004b: PUT /api/events/[id] returns 500 instead of silently dropping the
   } finally {
     mockDb.category.upsert = originalUpsert;
   }
+});
+
+test("FR-004b: PUT /api/events/[id] returns 409 for an event whose date has passed", async () => {
+  mockDb.events.set("evt_past", {
+    ...mockDb.events.get("evt1"),
+    id: "evt_past",
+    name: "Past Fest",
+    date: utcDayOffset(-1),
+  });
+  const res = await eventRoutePut(
+    putRequest("evt_past", validBody, sessionCookieFor("u_org")),
+    { params: { id: "evt_past" } }
+  );
+  assert.equal(res.status, 409);
+  assert.equal(mockDb.events.get("evt_past").name, "Past Fest", "a past event must not be edited");
+});
+
+test("FR-004b: PUT /api/events/[id] allows editing an event happening today", async () => {
+  mockDb.events.set("evt1", { ...mockDb.events.get("evt1"), date: utcDayOffset(0) });
+  const res = await eventRoutePut(
+    putRequest("evt1", validBody, sessionCookieFor("u_org")),
+    { params: { id: "evt1" } }
+  );
+  assert.equal(res.status, 200);
+});
+
+// ── In-memory fallback (DB unreachable) ──────────────────────────────────────
+
+async function withDbDown(events: StoredEvent[], fn: () => Promise<void>) {
+  (prisma as any).$transaction = async () => {
+    throw new Prisma.PrismaClientInitializationError("Can't reach database server", "5.22.0");
+  };
+  inMemoryEvents.push(...events);
+  try {
+    await fn();
+  } finally {
+    for (const e of events) {
+      const idx = inMemoryEvents.findIndex((m) => m.id === e.id);
+      if (idx !== -1) inMemoryEvents.splice(idx, 1);
+    }
+  }
+}
+
+function storedEvent(id: string, overrides: Partial<StoredEvent> = {}): StoredEvent {
+  return {
+    id,
+    name: "Fallback Fest",
+    description: "Stored in memory",
+    date: utcDayOffset(30).toISOString().slice(0, 10),
+    time: "10:00 AM",
+    venue: "Main Auditorium",
+    category: "Technology",
+    capacity: 100,
+    status: "ACTIVE",
+    organizerId: "u_org",
+    organizerName: "Campus Organizer",
+    createdAt: "2026-10-01T00:00:00.000Z",
+    updatedAt: "2026-10-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+test("FR-004b: fallback PUT rejects a stale edit with 409, like the DB path", async () => {
+  await withDbDown([storedEvent("evt_mem")], async () => {
+    const res = await eventRoutePut(
+      putRequest(
+        "evt_mem",
+        { ...validBody, updatedAt: "2020-01-01T00:00:00.000Z" },
+        sessionCookieFor("u_org")
+      ),
+      { params: { id: "evt_mem" } }
+    );
+    assert.equal(res.status, 409);
+    assert.equal(inMemoryEvents.find((e) => e.id === "evt_mem")?.name, "Fallback Fest");
+  });
+});
+
+test("FR-004b: fallback PUT accepts an edit whose updatedAt matches", async () => {
+  await withDbDown([storedEvent("evt_mem")], async () => {
+    const res = await eventRoutePut(
+      putRequest(
+        "evt_mem",
+        { ...validBody, updatedAt: "2026-10-01T00:00:00.000Z" },
+        sessionCookieFor("u_org")
+      ),
+      { params: { id: "evt_mem" } }
+    );
+    assert.equal(res.status, 200);
+    assert.equal(inMemoryEvents.find((e) => e.id === "evt_mem")?.name, validBody.name);
+  });
+});
+
+test("FR-004b: fallback PUT returns 409 for a past event", async () => {
+  const yesterday = utcDayOffset(-1).toISOString().slice(0, 10);
+  await withDbDown([storedEvent("evt_mem_past", { date: yesterday })], async () => {
+    const res = await eventRoutePut(
+      putRequest("evt_mem_past", validBody, sessionCookieFor("u_org")),
+      { params: { id: "evt_mem_past" } }
+    );
+    assert.equal(res.status, 409);
+  });
 });
