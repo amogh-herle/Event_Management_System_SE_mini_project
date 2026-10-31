@@ -5,7 +5,6 @@ import Link from "next/link";
 import { Brand } from "../components/AuthShell";
 import { RoleSwitcher } from "../components/RoleSwitcher";
 import { useSessionRole } from "@/lib/useSessionRole";
-import { isEventDatePast } from "@/lib/eventDates";
 import {
   AlertIcon,
   CalendarIcon,
@@ -840,16 +839,6 @@ export default function EventsDirectoryPage() {
                       >
                         <UsersIcon size={14} /> View Registrants
                       </button>
-                      {/* FR-004b: edit event details (upcoming events only) */}
-                      {event.status === "ACTIVE" && !isEventDatePast(event.date) && (
-                        <Link
-                          href={`/events/${event.id}/edit`}
-                          className="btn btn-sm btn-outline-primary"
-                          aria-label={`Edit event: ${event.name}`}
-                        >
-                          Edit
-                        </Link>
-                      )}
                       {event.status === "ACTIVE" && (
                         <button
                           type="button"
