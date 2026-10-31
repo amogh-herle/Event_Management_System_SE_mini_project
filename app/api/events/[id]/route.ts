@@ -4,7 +4,14 @@ import { prisma } from "@/lib/prisma";
 import { requireOrganizer } from "@/lib/auth";
 import { createEventSchema } from "@/lib/validation";
 import { StoredEvent, inMemoryEvents } from "@/app/api/events/store";
-import { getEventCapacity, updateEventDetails } from "@/lib/registration";
+import {
+  getEventCapacity,
+  updateEventDetails,
+  CANNOT_EDIT_CANCELLED_EVENT_ERROR,
+  CANNOT_EDIT_PAST_EVENT_ERROR,
+  EVENT_EDIT_CONFLICT_ERROR,
+} from "@/lib/registration";
+import { isEventDatePast } from "@/lib/eventDates";
 
 // ─────────────────────────────────────────────
 // GET /api/events/[id]  — Fetch a single event
@@ -306,9 +313,23 @@ export async function PUT(
 
       if (inMemoryEvents[idx].status === "CANCELLED") {
         return NextResponse.json(
-          { error: "Cancelled events cannot be edited" },
+          { error: CANNOT_EDIT_CANCELLED_EVENT_ERROR },
           { status: 409 }
         );
+      }
+
+      if (isEventDatePast(inMemoryEvents[idx].date)) {
+        return NextResponse.json({ error: CANNOT_EDIT_PAST_EVENT_ERROR }, { status: 409 });
+      }
+
+      // Same optimistic-concurrency check as the DB path, so a stale edit
+      // doesn't silently clobber a newer one just because the DB is down.
+      if (
+        expectedUpdatedAt &&
+        new Date(expectedUpdatedAt).getTime() !==
+          new Date(inMemoryEvents[idx].updatedAt).getTime()
+      ) {
+        return NextResponse.json({ error: EVENT_EDIT_CONFLICT_ERROR }, { status: 409 });
       }
 
       // Unlike the DB path, this fallback cannot reject a capacity drop

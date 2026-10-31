@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Brand } from "../../../components/AuthShell";
 import { RoleSwitcher } from "../../../components/RoleSwitcher";
 import { useSessionRole, type RoleType } from "@/lib/useSessionRole";
+import { isEventDatePast } from "@/lib/eventDates";
 import { AlertIcon, CheckIcon, ShieldIcon } from "../../../components/icons";
 import {
   EventFormFields,
@@ -41,6 +42,7 @@ export default function EditEventPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isCancelled, setIsCancelled] = useState(false);
+  const [isPast, setIsPast] = useState(false);
   // Tracked so the save request can detect a conflicting edit made
   // elsewhere between load and save (see EVENT_EDIT_CONFLICT_ERROR).
   const [loadedUpdatedAt, setLoadedUpdatedAt] = useState<string | null>(null);
@@ -83,6 +85,7 @@ export default function EditEventPage() {
           capacity: evt.capacity != null ? String(evt.capacity) : "",
         });
         setIsCancelled(evt.status === "CANCELLED");
+        setIsPast(typeof evt.date === "string" && isEventDatePast(evt.date));
         setLoadedUpdatedAt(typeof evt.updatedAt === "string" ? evt.updatedAt : null);
       })
       .catch(() => {
@@ -251,6 +254,13 @@ export default function EditEventPage() {
             </div>
           )}
 
+          {!isCancelled && isPast && (
+            <div className="banner-alert banner-danger" role="alert">
+              <AlertIcon size={18} />
+              <span>This event has already taken place and can no longer be edited.</span>
+            </div>
+          )}
+
           {serverError && (
             <div className="banner-alert banner-danger" role="alert">
               <AlertIcon size={18} />
@@ -259,7 +269,7 @@ export default function EditEventPage() {
           )}
 
           <form onSubmit={handleSubmit} className="form" noValidate>
-            <fieldset disabled={isCancelled} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+            <fieldset disabled={isCancelled || isPast} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
               <EventFormFields
                 form={form}
                 touched={touched}
@@ -275,7 +285,7 @@ export default function EditEventPage() {
               <button
                 type="submit"
                 className="btn btn-primary btn-lg"
-                disabled={isSubmitting || isCancelled}
+                disabled={isSubmitting || isCancelled || isPast}
               >
                 {isSubmitting ? (
                   <>
