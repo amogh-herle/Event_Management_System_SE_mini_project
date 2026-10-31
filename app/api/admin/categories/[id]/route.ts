@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth";
 import {
   countEventsUsingCategory,
   eventsUsingCategory,
   findCategoryWithName,
+  isConcurrentCategoryUse,
   isNotFound,
   isUniqueViolation,
   parseCategoryBody,
@@ -86,7 +88,21 @@ export async function DELETE(
       return NextResponse.json({ error: "Category not found" }, { status: 404 });
     }
 
-    const inUse = await countEventsUsingCategory(category);
+    // The "is it in use" check and the delete run in one SERIALIZABLE
+    // transaction, so an event linked to this category in between can't
+    // slip past the check. If that race happens anyway, Postgres aborts one
+    // side and the admin gets a 409 (see below), not a 500.
+    const inUse = await prisma.$transaction(
+      async (tx) => {
+        const count = await countEventsUsingCategory(category, tx);
+        if (count === 0) {
+          await tx.category.delete({ where: { id: category.id } });
+        }
+        return count;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
+
     if (inUse > 0) {
       return NextResponse.json(
         {
@@ -97,9 +113,14 @@ export async function DELETE(
       );
     }
 
-    await prisma.category.delete({ where: { id: category.id } });
     return new NextResponse(null, { status: 204 });
   } catch (err) {
+    if (isConcurrentCategoryUse(err)) {
+      return NextResponse.json(
+        { error: "This category was just assigned to an event and can't be removed. Refresh and try again." },
+        { status: 409 }
+      );
+    }
     if (isNotFound(err)) {
       return NextResponse.json({ error: "Category not found" }, { status: 404 });
     }

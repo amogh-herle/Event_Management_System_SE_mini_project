@@ -341,6 +341,23 @@ test("FR-006c: a category used by events (even cancelled or name-only links) can
   assert.equal(mockDb.registrations.size, 1);
 });
 
+test("FR-006c: an event linked to the category mid-delete returns 409, not 500", async () => {
+  // Postgres aborts the losing SERIALIZABLE transaction (P2034) or the
+  // delete hits the event's foreign key (P2003); both must surface as 409.
+  for (const code of ["P2034", "P2003"]) {
+    mockDb.category.delete = async () => {
+      throw new Prisma.PrismaClientKnownRequestError("Concurrent use", { code, clientVersion: "5.22.0" });
+    };
+    const res = await adminRemoveDelete(
+      new Request("http://localhost:3000/api/admin/categories/cat_unused", { method: "DELETE", headers: admin() }),
+      { params: { id: "cat_unused" } }
+    );
+    assert.equal(res.status, 409, code);
+    assert.match((await res.json()).error, /just assigned to an event/);
+    assert.equal(mockDb.categories.has("cat_unused"), true, code);
+  }
+});
+
 test("FR-006c: removing an unknown category returns 404", async () => {
   const res = await adminRemoveDelete(
     new Request("http://localhost:3000/api/admin/categories/nope", { method: "DELETE", headers: admin() }),

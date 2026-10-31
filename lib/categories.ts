@@ -22,8 +22,11 @@ export function eventsUsingCategory(category: { id: string; name: string }): Pri
   return { OR: [{ categoryId: category.id }, { category: category.name }] };
 }
 
-export async function countEventsUsingCategory(category: { id: string; name: string }): Promise<number> {
-  return prisma.event.count({ where: eventsUsingCategory(category) });
+export async function countEventsUsingCategory(
+  category: { id: string; name: string },
+  db: Pick<Prisma.TransactionClient, "event"> = prisma
+): Promise<number> {
+  return db.event.count({ where: eventsUsingCategory(category) });
 }
 
 /**
@@ -65,6 +68,17 @@ export async function parseCategoryBody(
 
 export function isUniqueViolation(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
+}
+
+/**
+ * A SERIALIZABLE transaction that lost a race (P2034), or a foreign-key
+ * failure (P2003) from an event linked to the category at the same moment.
+ */
+export function isConcurrentCategoryUse(err: unknown): boolean {
+  return (
+    err instanceof Prisma.PrismaClientKnownRequestError &&
+    (err.code === "P2034" || err.code === "P2003")
+  );
 }
 
 export function isNotFound(err: unknown): boolean {
