@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Brand } from "../components/AuthShell";
 import { RoleSwitcher } from "../components/RoleSwitcher";
@@ -34,6 +34,14 @@ export default function EventsDirectoryPage() {
   const [role, setRole] = useSessionRole();
   const [tab, setTab] = useState<"organizer" | "all" | "registrations">("all");
   const [search, setSearch] = useState("");
+  // FR-006b: category/date/venue filters, applied server-side with the search
+  const [filterCategory, setFilterCategory] = useState("");
+  const [filterDate, setFilterDate] = useState("");
+  const [filterVenue, setFilterVenue] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [debouncedVenue, setDebouncedVenue] = useState("");
+  const [categories, setCategories] = useState<string[]>([]);
+  const eventsRequestId = useRef(0);
   const [confirmModal, setConfirmModal] = useState<ConfirmModal>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -88,16 +96,32 @@ export default function EventsDirectoryPage() {
       .finally(() => setRegLoading(false));
   }
 
+  // FR-006b: search (name only) + filters, sent as query params
+  const filterQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    if (debouncedSearch.trim()) params.set("q", debouncedSearch.trim());
+    if (filterCategory) params.set("category", filterCategory);
+    if (filterDate) params.set("date", filterDate);
+    if (debouncedVenue.trim()) params.set("venue", debouncedVenue.trim());
+    return params.toString();
+  }, [debouncedSearch, filterCategory, filterDate, debouncedVenue]);
+  const hasActiveFilters = filterQuery !== "";
+
   function loadEvents() {
     setLoading(true);
+    // Only the latest request may update the list, so a slow response for
+    // an older search can't overwrite newer results.
+    const requestId = ++eventsRequestId.current;
     // FR-006a: "All Events" tab always requests active=true (no cancelled events shown)
-    const url =
+    const baseUrl =
       tab === "organizer"
         ? "/api/events?organizer=me"
         : "/api/events?active=true";
+    const url = filterQuery ? `${baseUrl}&${filterQuery}` : baseUrl;
     fetch(url, { headers: { "x-user-role": role } })
       .then((res) => res.json())
       .then((data) => {
+        if (requestId !== eventsRequestId.current) return;
         if (data.events && Array.isArray(data.events)) {
           setEvents(data.events);
           // Seed from the server's own answer rather than assuming nothing
@@ -119,7 +143,9 @@ export default function EventsDirectoryPage() {
         }
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (requestId === eventsRequestId.current) setLoading(false);
+      });
   }
 
   // Participants have no events to create, so "My Created Events" isn't a
@@ -140,6 +166,48 @@ export default function EventsDirectoryPage() {
     setRegisterErrors({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, role]);
+
+  // FR-006b: debounce the free-text inputs so typing doesn't fire a request
+  // per keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedVenue(filterVenue), 300);
+    return () => clearTimeout(t);
+  }, [filterVenue]);
+
+  // Reload when the search/filters change (tab/role changes are handled by
+  // the effect above, which already uses the current filters).
+  const filterQueryLoaded = useRef(filterQuery);
+  useEffect(() => {
+    if (filterQueryLoaded.current === filterQuery) return;
+    filterQueryLoaded.current = filterQuery;
+    if (tab !== "registrations") loadEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterQuery]);
+
+  useEffect(() => {
+    fetch("/api/categories")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.categories && Array.isArray(data.categories)) {
+          setCategories(data.categories);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  function clearFilters() {
+    setSearch("");
+    setDebouncedSearch("");
+    setFilterCategory("");
+    setFilterDate("");
+    setFilterVenue("");
+    setDebouncedVenue("");
+  }
 
   async function handleSelfCancellation(eventId: string, eventName: string, isWaitlist?: boolean) {
     setActionLoading(true);
@@ -183,17 +251,9 @@ export default function EventsDirectoryPage() {
     }
   }
 
-  const filteredEvents = useMemo(() => {
-    if (!search.trim()) return events;
-    const q = search.toLowerCase();
-    return events.filter(
-      (e) =>
-        e.name.toLowerCase().includes(q) ||
-        e.category.toLowerCase().includes(q) ||
-        e.venue.toLowerCase().includes(q) ||
-        e.description.toLowerCase().includes(q)
-    );
-  }, [events, search]);
+  // FR-006b: search and filters are applied by GET /api/events, so the
+  // list returned by the server is already the filtered result.
+  const filteredEvents = events;
 
   // ── Cancel action ─────────────────────────────────────────────────────────
   async function handleCancel(event: StoredEvent) {
@@ -377,14 +437,75 @@ export default function EventsDirectoryPage() {
           <div className="search-wrap">
             <input
               type="search"
-              placeholder="Filter by name, category, or venue..."
+              placeholder="Search events by name..."
               className="input search-input"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              aria-label="Filter events"
+              aria-label="Search events by name"
+              maxLength={100}
             />
           </div>
         </div>
+
+        {/* FR-006b: Category / Date / Venue filters */}
+        {tab !== "registrations" && (
+          <div
+            role="group"
+            aria-label="Filter events"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+              gap: "12px",
+              alignItems: "center",
+              maxWidth: "820px",
+              marginTop: "-8px",
+              marginBottom: "24px",
+            }}
+          >
+            <select
+              className="input select search-input"
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              aria-label="Filter by category"
+            >
+              <option value="">All categories</option>
+              {(filterCategory && !categories.includes(filterCategory)
+                ? [filterCategory, ...categories]
+                : categories
+              ).map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <input
+              type="date"
+              className="input search-input"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              aria-label="Filter by date"
+            />
+            <input
+              type="search"
+              className="input search-input"
+              placeholder="Venue..."
+              value={filterVenue}
+              onChange={(e) => setFilterVenue(e.target.value)}
+              aria-label="Filter by venue"
+              maxLength={100}
+            />
+            {(hasActiveFilters || search || filterVenue) && (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                onClick={clearFilters}
+                style={{ justifySelf: "start" }}
+              >
+                <XCircleIcon size={14} /> Clear filters
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Event List / My Registrations */}
         {tab === "registrations" ? (
@@ -525,6 +646,15 @@ export default function EventsDirectoryPage() {
         ) : loading ? (
           <div className="loading-state">
             <span className="spinner" /> Loading events...
+          </div>
+        ) : filteredEvents.length === 0 && hasActiveFilters ? (
+          <div className="empty-state-card">
+            <TicketIcon size={44} />
+            <h3>No matching events</h3>
+            <p>No events match your search or filters. Try different keywords or clear the filters.</p>
+            <button type="button" className="btn btn-primary" onClick={clearFilters}>
+              <XCircleIcon size={16} /> Clear filters
+            </button>
           </div>
         ) : filteredEvents.length === 0 ? (
           <div className="empty-state-card">

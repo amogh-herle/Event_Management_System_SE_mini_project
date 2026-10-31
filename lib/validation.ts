@@ -126,6 +126,18 @@ export const createEventSchema = z.object({
 
 export type CreateEventInput = z.infer<typeof createEventSchema>;
 
+// FR-006c: admin category management. Same 100-character limit as the
+// event form's category field, so any managed category can be used there.
+export const categorySchema = z.object({
+  name: z
+    .string({ required_error: "Category name is required" })
+    .trim()
+    .min(1, "Category name is required")
+    .max(100, "Category name must be at most 100 characters"),
+});
+
+export type CategoryInput = z.infer<typeof categorySchema>;
+
 // userId/userEmail are intentionally not accepted here — the registering
 // user's identity always comes from the verified session (see
 // app/api/registrations/route.ts), never from client-supplied input.
