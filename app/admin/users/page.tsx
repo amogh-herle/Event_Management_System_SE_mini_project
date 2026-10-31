@@ -93,6 +93,16 @@ export default function AdminUsersPage() {
       <header className="nav event-nav">
         <Brand />
         <div className="event-nav-actions">
+          <Link href="/admin/stats" className="btn btn-ghost">
+            Platform Stats
+          </Link>
+          <Link
+            href="/admin/users"
+            className="btn btn-ghost"
+            style={{ fontWeight: 700, color: "var(--primary)" }}
+          >
+            Manage Users
+          </Link>
           <Link href="/events" className="btn btn-ghost">
             Back to events
           </Link>
