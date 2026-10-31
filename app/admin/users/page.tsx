@@ -106,12 +106,6 @@ export default function AdminUsersPage() {
             <h1>Manage user accounts</h1>
             <p className="lede">View every account, suspend access, or remove one permanently.</p>
           </div>
-          {/* FR-006c */}
-          <div className="directory-cta">
-            <Link href="/admin/categories" className="btn btn-ghost">
-              Manage categories
-            </Link>
-          </div>
         </div>
 
         {loadState === "loading" && (
