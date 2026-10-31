@@ -31,6 +31,15 @@ async function notifyParticipantsSafely(
   }
 }
 
+// The in-memory fallback has no Registration table (see store.ts), so there
+// is nobody it could notify. It still returns the same `notifications` field
+// as the DB path, so clients see one response shape in both modes.
+const FALLBACK_NOTIFICATIONS: NotifyEventParticipantsResult = {
+  recipients: 0,
+  sent: 0,
+  failed: 0,
+};
+
 // ─────────────────────────────────────────────
 // GET /api/events/[id]  — Fetch a single event
 // ─────────────────────────────────────────────
@@ -198,6 +207,7 @@ export async function PATCH(
           status: inMemoryEvents[idx].status,
           updatedAt: inMemoryEvents[idx].updatedAt,
         },
+        notifications: FALLBACK_NOTIFICATIONS,
       });
     }
 
@@ -373,7 +383,10 @@ export async function PUT(
         updatedAt: new Date().toISOString(),
       };
 
-      return NextResponse.json({ event: inMemoryEvents[idx] });
+      return NextResponse.json({
+        event: inMemoryEvents[idx],
+        notifications: FALLBACK_NOTIFICATIONS,
+      });
     }
 
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {

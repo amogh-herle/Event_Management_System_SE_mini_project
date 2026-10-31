@@ -23,6 +23,17 @@ function sessionCookieFor(userId: string) {
   return { Cookie: `session=${createSessionValue(userId)}` };
 }
 
+// Event days are relative to today so these tests keep passing once a fixed
+// date goes by (FR-004b rejects edits to past events).
+function utcDay(offsetDays: number) {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() + offsetDays);
+  return d.toISOString().slice(0, 10);
+}
+const EVENT_DAY = utcDay(30);
+const LATER_DAY = utcDay(32);
+
 function createMockDb() {
   const users = new Map<string, any>();
   const events = new Map<string, any>();
@@ -38,7 +49,7 @@ function createMockDb() {
 
   const baseEvent = {
     description: "Annual technical symposium",
-    date: new Date("2026-11-10T00:00:00Z"),
+    date: new Date(`${EVENT_DAY}T00:00:00Z`),
     time: "10:00 AM",
     venue: "Main Auditorium",
     category: "Technology",
@@ -194,7 +205,7 @@ function cancelRequest(id: string, headers: Record<string, string> = {}) {
 const currentDetails = {
   name: "Tech Fest",
   description: "Annual technical symposium",
-  date: "2026-11-10",
+  date: EVENT_DAY,
   time: "10:00 AM",
   venue: "Main Auditorium",
   category: "Technology",
@@ -316,7 +327,7 @@ test("FR-005b: updating an event notifies participants with the changed details"
   const res = await eventRoutePut(
     putRequest(
       "evt1",
-      { ...currentDetails, date: "2026-11-12", time: "2:00 PM", venue: "Seminar Hall 2" },
+      { ...currentDetails, date: LATER_DAY, time: "2:00 PM", venue: "Seminar Hall 2" },
       sessionCookieFor("u_org")
     ),
     { params: { id: "evt1" } }
@@ -330,7 +341,7 @@ test("FR-005b: updating an event notifies participants with the changed details"
     assert.equal(n.type, "EVENT_UPDATE");
     assert.equal(n.subject, "Event Updated: Tech Fest");
     assert.deepEqual(n.details?.changes, [
-      { field: "date", label: "Date", before: "2026-11-10", after: "2026-11-12" },
+      { field: "date", label: "Date", before: EVENT_DAY, after: LATER_DAY },
       { field: "time", label: "Time", before: "10:00 AM", after: "2:00 PM" },
       { field: "venue", label: "Venue", before: "Main Auditorium", after: "Seminar Hall 2" },
     ]);
@@ -455,7 +466,7 @@ test("FR-005b: a participant without an email address is counted as failed, not 
 });
 
 test("FR-005b: diffEventDetails ignores capacity and treats equal dates as unchanged", () => {
-  const before = { ...currentDetails, date: new Date("2026-11-10T00:00:00Z") };
+  const before = { ...currentDetails, date: new Date(`${EVENT_DAY}T00:00:00Z`) };
   assert.deepEqual(diffEventDetails(before, { ...currentDetails, capacity: 5 } as any), []);
   const changes = diffEventDetails(before, { ...currentDetails, description: "New agenda" });
   assert.deepEqual(changes, [{ field: "description", label: "Description", after: "New agenda" }]);
@@ -530,4 +541,50 @@ test("FR-005b: an organizer holding their own event's registration is not notifi
   });
   assert.equal(cancelRes.status, 200);
   assert.equal(sent.filter((n) => n.userId === "u_org").length, 0, "organizer must not email themself");
+});
+
+// ── In-memory fallback (DB unreachable) ──────────────────────────────────────
+
+test("FR-005b: fallback PATCH cancel and PUT edit return the same notifications shape as the DB path", async () => {
+  const { inMemoryEvents } = await import("../app/api/events/store");
+  (prisma as any).$transaction = async () => {
+    throw new Prisma.PrismaClientInitializationError("Can't reach database server", "5.22.0");
+  };
+  (prisma as any).event.findUnique = async () => {
+    throw new Prisma.PrismaClientInitializationError("Can't reach database server", "5.22.0");
+  };
+  const stored = {
+    id: "evt_mem",
+    name: "Fallback Fest",
+    description: "Stored in memory",
+    date: EVENT_DAY,
+    time: "10:00 AM",
+    venue: "Main Auditorium",
+    category: "Technology",
+    capacity: 10,
+    status: "ACTIVE" as const,
+    organizerId: "u_org",
+    organizerName: "Campus Organizer",
+    createdAt: "2026-10-01T00:00:00.000Z",
+    updatedAt: "2026-10-01T00:00:00.000Z",
+  };
+  inMemoryEvents.push(stored);
+  try {
+    const putRes = await eventRoutePut(
+      putRequest("evt_mem", { ...currentDetails, venue: "Seminar Hall 2" }, sessionCookieFor("u_org")),
+      { params: { id: "evt_mem" } }
+    );
+    assert.equal(putRes.status, 200);
+    assert.deepEqual((await putRes.json()).notifications, { recipients: 0, sent: 0, failed: 0 });
+
+    const patchRes = await eventRoutePatch(cancelRequest("evt_mem", sessionCookieFor("u_org")), {
+      params: { id: "evt_mem" },
+    });
+    assert.equal(patchRes.status, 200);
+    assert.deepEqual((await patchRes.json()).notifications, { recipients: 0, sent: 0, failed: 0 });
+    assert.equal(sent.length, 0);
+  } finally {
+    const idx = inMemoryEvents.findIndex((e) => e.id === "evt_mem");
+    if (idx !== -1) inMemoryEvents.splice(idx, 1);
+  }
 });
