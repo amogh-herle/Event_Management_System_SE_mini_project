@@ -6,28 +6,15 @@ import { useRouter } from "next/navigation";
 import { Brand } from "../../components/AuthShell";
 import { RoleSwitcher } from "../../components/RoleSwitcher";
 import { useSessionRole, type RoleType } from "@/lib/useSessionRole";
+import { AlertIcon, ArrowRightIcon, CheckIcon, PlusIcon, ShieldIcon } from "../../components/icons";
 import {
-  AlertIcon,
-  ArrowRightIcon,
-  CalendarIcon,
-  CheckIcon,
-  ClockIcon,
-  MapPinIcon,
-  PlusIcon,
-  ShieldIcon,
-  TagIcon,
-  UsersIcon,
-} from "../../components/icons";
-
-interface FormState {
-  name: string;
-  description: string;
-  date: string;
-  time: string;
-  venue: string;
-  category: string;
-  capacity: string;
-}
+  EventFormFields,
+  EventPreviewPanel,
+  EVENT_DEFAULT_CATEGORIES,
+  validateEventField,
+  validateEventForm,
+  type EventFormState as FormState,
+} from "../../components/EventFormFields";
 
 const INITIAL_FORM: FormState = {
   name: "",
@@ -39,23 +26,12 @@ const INITIAL_FORM: FormState = {
   capacity: "",
 };
 
-const DEFAULT_CATEGORIES = [
-  "Technology",
-  "Workshops",
-  "Hackathons",
-  "Cultural",
-  "Music",
-  "Sports",
-  "Academic",
-  "Seminars",
-];
-
 export default function CreateEventPage() {
   const router = useRouter();
   const [role, setRole] = useSessionRole();
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [touched, setTouched] = useState<Partial<Record<keyof FormState, boolean>>>({});
-  const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
+  const [categories, setCategories] = useState<string[]>(EVENT_DEFAULT_CATEGORIES);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof FormState, string>>>({});
@@ -78,36 +54,6 @@ export default function CreateEventPage() {
     setServerError(null);
   }
 
-  function validateField(field: keyof FormState, value: string): string | undefined {
-    switch (field) {
-      case "name":
-        return value.trim() ? undefined : "Required field missing: name";
-      case "description":
-        return value.trim() ? undefined : "Required field missing: description";
-      case "date":
-        if (!value.trim()) return "Required field missing: date";
-        return isNaN(Date.parse(value)) ? "Enter a valid date" : undefined;
-      case "time":
-        return value.trim() ? undefined : "Required field missing: time";
-      case "venue":
-        return value.trim() ? undefined : "Required field missing: venue";
-      case "category":
-        return value.trim() ? undefined : "Required field missing: category";
-      case "capacity":
-        if (!value || value.trim() === "") {
-          return "Required field missing: capacity";
-        }
-        const num = Number(value);
-        if (isNaN(num) || !Number.isInteger(num) || num <= 0) {
-          return "Invalid capacity: capacity must be a positive integer";
-        }
-        if (num > 100_000) {
-          return "Invalid capacity: must be 100,000 or less";
-        }
-        return undefined;
-    }
-  }
-
   function handleChange(field: keyof FormState, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
     if (fieldErrors[field]) {
@@ -118,7 +64,7 @@ export default function CreateEventPage() {
 
   function handleBlur(field: keyof FormState) {
     setTouched((prev) => ({ ...prev, [field]: true }));
-    const error = validateField(field, form[field]);
+    const error = validateEventField(field, form[field]);
     setFieldErrors((prev) => ({ ...prev, [field]: error }));
   }
 
@@ -139,12 +85,7 @@ export default function CreateEventPage() {
     setTouched(allTouched);
 
     // Validate all fields
-    const errors: Partial<Record<keyof FormState, string>> = {};
-    (Object.keys(form) as (keyof FormState)[]).forEach((field) => {
-      const err = validateField(field, form[field]);
-      if (err) errors[field] = err;
-    });
-
+    const errors = validateEventForm(form);
     setFieldErrors(errors);
 
     if (Object.keys(errors).length > 0) {
@@ -195,6 +136,11 @@ export default function CreateEventPage() {
       setIsSubmitting(false);
     }
   }
+
+  const categoryOptions =
+    form.category && !categories.includes(form.category)
+      ? [form.category, ...categories]
+      : categories;
 
   return (
     <div className="event-create-page">
@@ -281,203 +227,14 @@ export default function CreateEventPage() {
               )}
 
               <form onSubmit={handleSubmit} className="form" noValidate>
-                {/* Event Name */}
-                <div className="field">
-                  <label htmlFor="event-name" className="field-label">
-                    Event Name <span className="req">*</span>
-                  </label>
-                  <div className="input-wrap">
-                    <span className="input-icon">
-                      <TagIcon size={18} />
-                    </span>
-                    <input
-                      id="event-name"
-                      type="text"
-                      className="input"
-                      placeholder="e.g. Tech Fest"
-                      value={form.name}
-                      onChange={(e) => handleChange("name", e.target.value)}
-                      onBlur={() => handleBlur("name")}
-                      aria-invalid={!!(touched.name && fieldErrors.name)}
-                      required
-                    />
-                  </div>
-                  {touched.name && fieldErrors.name && (
-                    <p className="field-error" role="alert">
-                      <AlertIcon size={14} /> {fieldErrors.name}
-                    </p>
-                  )}
-                </div>
-
-                {/* Category & Capacity Row */}
-                <div className="fields-row">
-                  <div className="field">
-                    <label htmlFor="event-category" className="field-label">
-                      Category <span className="req">*</span>
-                    </label>
-                    <div className="input-wrap">
-                      <span className="input-icon">
-                        <TagIcon size={18} />
-                      </span>
-                      <select
-                        id="event-category"
-                        className="input select"
-                        value={form.category}
-                        onChange={(e) => handleChange("category", e.target.value)}
-                        onBlur={() => handleBlur("category")}
-                        aria-invalid={!!(touched.category && fieldErrors.category)}
-                        required
-                      >
-                        {categories.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    {touched.category && fieldErrors.category && (
-                      <p className="field-error" role="alert">
-                        <AlertIcon size={14} /> {fieldErrors.category}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="field">
-                    <label htmlFor="event-capacity" className="field-label">
-                      Total Capacity <span className="req">*</span>
-                    </label>
-                    <div className="input-wrap">
-                      <span className="input-icon">
-                        <UsersIcon size={18} />
-                      </span>
-                      <input
-                        id="event-capacity"
-                        type="number"
-                        className="input"
-                        placeholder="e.g. 100"
-                        min="1"
-                        step="1"
-                        value={form.capacity}
-                        onChange={(e) => handleChange("capacity", e.target.value)}
-                        onBlur={() => handleBlur("capacity")}
-                        aria-invalid={!!(touched.capacity && fieldErrors.capacity)}
-                        required
-                      />
-                    </div>
-                    {touched.capacity && fieldErrors.capacity && (
-                      <p className="field-error" role="alert">
-                        <AlertIcon size={14} /> {fieldErrors.capacity}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Date & Time Row */}
-                <div className="fields-row">
-                  <div className="field">
-                    <label htmlFor="event-date" className="field-label">
-                      Event Date <span className="req">*</span>
-                    </label>
-                    <div className="input-wrap">
-                      <span className="input-icon">
-                        <CalendarIcon size={18} />
-                      </span>
-                      <input
-                        id="event-date"
-                        type="date"
-                        className="input"
-                        value={form.date}
-                        onChange={(e) => handleChange("date", e.target.value)}
-                        onBlur={() => handleBlur("date")}
-                        aria-invalid={!!(touched.date && fieldErrors.date)}
-                        required
-                      />
-                    </div>
-                    {touched.date && fieldErrors.date && (
-                      <p className="field-error" role="alert">
-                        <AlertIcon size={14} /> {fieldErrors.date}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="field">
-                    <label htmlFor="event-time" className="field-label">
-                      Event Time <span className="req">*</span>
-                    </label>
-                    <div className="input-wrap">
-                      <span className="input-icon">
-                        <ClockIcon size={18} />
-                      </span>
-                      <input
-                        id="event-time"
-                        type="text"
-                        className="input"
-                        placeholder="e.g. 10:00 AM"
-                        value={form.time}
-                        onChange={(e) => handleChange("time", e.target.value)}
-                        onBlur={() => handleBlur("time")}
-                        aria-invalid={!!(touched.time && fieldErrors.time)}
-                        required
-                      />
-                    </div>
-                    {touched.time && fieldErrors.time && (
-                      <p className="field-error" role="alert">
-                        <AlertIcon size={14} /> {fieldErrors.time}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Venue */}
-                <div className="field">
-                  <label htmlFor="event-venue" className="field-label">
-                    Venue / Location <span className="req">*</span>
-                  </label>
-                  <div className="input-wrap">
-                    <span className="input-icon">
-                      <MapPinIcon size={18} />
-                    </span>
-                    <input
-                      id="event-venue"
-                      type="text"
-                      className="input"
-                      placeholder="e.g. Auditorium A, Campus Center"
-                      value={form.venue}
-                      onChange={(e) => handleChange("venue", e.target.value)}
-                      onBlur={() => handleBlur("venue")}
-                      aria-invalid={!!(touched.venue && fieldErrors.venue)}
-                      required
-                    />
-                  </div>
-                  {touched.venue && fieldErrors.venue && (
-                    <p className="field-error" role="alert">
-                      <AlertIcon size={14} /> {fieldErrors.venue}
-                    </p>
-                  )}
-                </div>
-
-                {/* Description */}
-                <div className="field">
-                  <label htmlFor="event-description" className="field-label">
-                    Description <span className="req">*</span>
-                  </label>
-                  <textarea
-                    id="event-description"
-                    className="textarea"
-                    rows={4}
-                    placeholder="Provide a comprehensive summary of the event schedule, prerequisites, and instructions..."
-                    value={form.description}
-                    onChange={(e) => handleChange("description", e.target.value)}
-                    onBlur={() => handleBlur("description")}
-                    aria-invalid={!!(touched.description && fieldErrors.description)}
-                    required
-                  />
-                  {touched.description && fieldErrors.description && (
-                    <p className="field-error" role="alert">
-                      <AlertIcon size={14} /> {fieldErrors.description}
-                    </p>
-                  )}
-                </div>
+                <EventFormFields
+                  form={form}
+                  touched={touched}
+                  fieldErrors={fieldErrors}
+                  categoryOptions={categoryOptions}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                />
 
                 {/* Submit Action */}
                 <div className="form-submit-row">
@@ -503,66 +260,18 @@ export default function CreateEventPage() {
               </form>
             </div>
 
-            {/* Live Preview Column */}
-            <aside className="event-preview-column" aria-label="Live Event Preview">
-              <div className="preview-sticky-card">
-                <div className="preview-header">
-                  <span className="preview-label">Live Participant Preview</span>
-                  <span className="badge badge-success">Status: Active</span>
-                </div>
-
-                <div className="preview-event-card">
-                  <div className="preview-badge-row">
-                    <span className="category-pill">{form.category || "General"}</span>
-                    <span className="capacity-pill">
-                      <UsersIcon size={13} /> {form.capacity || "—"} seats
-                    </span>
-                  </div>
-
-                  <h3 className="preview-title">
-                    {form.name || "Event Title will appear here"}
-                  </h3>
-
-                  <p className="preview-description">
-                    {form.description ||
-                      "Detailed event synopsis, rules, and attendee requirements will display here."}
-                  </p>
-
-                  <div className="preview-meta-list">
-                    <div className="preview-meta-item">
-                      <CalendarIcon size={16} />
-                      <span>{form.date || "Date not set"}</span>
-                    </div>
-                    <div className="preview-meta-item">
-                      <ClockIcon size={16} />
-                      <span>{form.time || "Time not set"}</span>
-                    </div>
-                    <div className="preview-meta-item">
-                      <MapPinIcon size={16} />
-                      <span>{form.venue || "Venue not set"}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="preview-guidance">
-                  <h4>Acceptance Criteria (FR-004a)</h4>
-                  <ul>
-                    <li>
-                      <CheckIcon size={14} /> All 7 required fields stored on creation
-                    </li>
-                    <li>
-                      <CheckIcon size={14} /> Empty required fields rejected with 400
-                    </li>
-                    <li>
-                      <CheckIcon size={14} /> Capacity strictly verified as positive integer
-                    </li>
-                    <li>
-                      <CheckIcon size={14} /> Non-organizers restricted from event creation
-                    </li>
-                  </ul>
-                </div>
-              </div>
-            </aside>
+            <EventPreviewPanel
+              form={form}
+              statusLabel="Active"
+              statusVariant="success"
+              acceptanceHeading="Acceptance Criteria (FR-004a)"
+              acceptanceCriteria={[
+                "All 7 required fields stored on creation",
+                "Empty required fields rejected with 400",
+                "Capacity strictly verified as positive integer",
+                "Non-organizers restricted from event creation",
+              ]}
+            />
           </div>
         )}
       </main>

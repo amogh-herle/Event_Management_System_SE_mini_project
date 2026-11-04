@@ -103,6 +103,10 @@ export default function AdminUsersPage() {
           >
             Manage Users
           </Link>
+          {/* FR-006c */}
+          <Link href="/admin/categories" className="btn btn-ghost">
+            Manage categories
+          </Link>
           <Link href="/events" className="btn btn-ghost">
             Back to events
           </Link>

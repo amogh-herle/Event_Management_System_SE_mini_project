@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { createEventSchema } from "@/lib/validation";
 import { getAuthUserFromRequest, requireOrganizer, ensureDemoUserRow } from "@/lib/auth";
 import { StoredEvent, inMemoryEvents } from "@/app/api/events/store";
+import { buildEventFilterWhere, matchesEventFilters, parseEventFilters } from "@/lib/eventFilters";
 
 export type { StoredEvent };
 
@@ -137,6 +138,9 @@ export async function GET(request: Request) {
   const organizerFilter = searchParams.get("organizer");
   // FR-006a: "active" param — when "true" only return ACTIVE events (excludes CANCELLED)
   const activeOnly = searchParams.get("active") === "true";
+  // FR-006b: optional name search (q) and category/date/venue filters,
+  // combined with each other and with the filters above.
+  const filters = parseEventFilters(searchParams);
   const auth = await getAuthUserFromRequest(request);
 
   if (organizerFilter === "me" && !auth) {
@@ -144,7 +148,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const whereClause: { organizerId?: string; status?: "ACTIVE" } = {};
+    const whereClause: Prisma.EventWhereInput = buildEventFilterWhere(filters);
     if (organizerFilter === "me" && auth) {
       whereClause.organizerId = auth.id;
     }
@@ -244,6 +248,7 @@ export async function GET(request: Request) {
     if (activeOnly) {
       list = list.filter((e) => e.status === "ACTIVE");
     }
+    list = list.filter((e) => matchesEventFilters(e, filters));
     return NextResponse.json({ events: list });
   }
 }

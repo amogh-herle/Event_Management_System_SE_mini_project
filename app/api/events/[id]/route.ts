@@ -2,8 +2,43 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireOrganizer } from "@/lib/auth";
-import { inMemoryEvents } from "@/app/api/events/store";
-import { getEventCapacity } from "@/lib/registration";
+import { createEventSchema } from "@/lib/validation";
+import { StoredEvent, inMemoryEvents } from "@/app/api/events/store";
+import {
+  getEventCapacity,
+  updateEventDetails,
+  cancelEvent,
+  notifyEventParticipants,
+  CANNOT_EDIT_CANCELLED_EVENT_ERROR,
+  CANNOT_EDIT_PAST_EVENT_ERROR,
+  EVENT_EDIT_CONFLICT_ERROR,
+  type NotifyEventParticipantsParams,
+  type NotifyEventParticipantsResult,
+} from "@/lib/registration";
+import { isEventDatePast } from "@/lib/eventDates";
+
+// FR-005b: the event change has already been committed when this runs, so
+// a notification failure must never surface as an error response (or fall
+// into the handlers' DB-unavailable fallback paths).
+async function notifyParticipantsSafely(
+  params: NotifyEventParticipantsParams
+): Promise<NotifyEventParticipantsResult> {
+  try {
+    return await notifyEventParticipants(params);
+  } catch (err) {
+    console.error("[events/:id] participant notification failed:", err);
+    return { recipients: 0, sent: 0, failed: 0 };
+  }
+}
+
+// The in-memory fallback has no Registration table (see store.ts), so there
+// is nobody it could notify. It still returns the same `notifications` field
+// as the DB path, so clients see one response shape in both modes.
+const FALLBACK_NOTIFICATIONS: NotifyEventParticipantsResult = {
+  recipients: 0,
+  sent: 0,
+  failed: 0,
+};
 
 // ─────────────────────────────────────────────
 // GET /api/events/[id]  — Fetch a single event
@@ -109,36 +144,24 @@ export async function PATCH(
 
   // ── Database path ──────────────────────────────────────────────────────────
   try {
-    const event = await prisma.event.findUnique({ where: { id } });
+    const result = await cancelEvent({ eventId: id, organizerId: auth.user.id });
 
-    if (!event) {
-      return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    if (!result.success || !result.event) {
+      return NextResponse.json({ error: result.error }, { status: result.statusCode });
     }
 
-    // Only the owning organizer may cancel (AC: FR-005a ownership guard)
-    if (event.organizerId !== auth.user.id) {
-      return NextResponse.json(
-        { error: "Forbidden: you are not the organizer of this event" },
-        { status: 403 }
-      );
-    }
-
-    if (event.status === "CANCELLED") {
-      return NextResponse.json(
-        { error: "Event is already cancelled" },
-        { status: 409 }
-      );
-    }
-
-    const updated = await prisma.event.update({
-      where: { id },
-      data: { status: "CANCELLED" },
-      include: { organizer: { select: { id: true, name: true, email: true } } },
-    });
+    const updated = result.event;
 
     // Mirror to in-memory store
     const idx = inMemoryEvents.findIndex((e) => e.id === id);
     if (idx !== -1) inMemoryEvents[idx].status = "CANCELLED";
+
+    // FR-005b: notify registered participants, only once the cancellation
+    // has been committed. Registrations themselves are left untouched.
+    const notifications = await notifyParticipantsSafely({
+      kind: "CANCELLATION",
+      event: updated,
+    });
 
     return NextResponse.json({
       event: {
@@ -147,6 +170,7 @@ export async function PATCH(
         status: updated.status,
         updatedAt: updated.updatedAt.toISOString(),
       },
+      notifications,
     });
   } catch (err) {
     // Only degrade to the in-memory store for a genuinely unreachable
@@ -183,6 +207,7 @@ export async function PATCH(
           status: inMemoryEvents[idx].status,
           updatedAt: inMemoryEvents[idx].updatedAt,
         },
+        notifications: FALLBACK_NOTIFICATIONS,
       });
     }
 
@@ -192,6 +217,184 @@ export async function PATCH(
 
     console.error("[events/:id] failed to cancel event:", err);
     return NextResponse.json({ error: "Failed to cancel event" }, { status: 500 });
+  }
+}
+
+// ─────────────────────────────────────────────
+// PUT /api/events/[id]  — Edit event details (FR-004b)
+//   Body: { name, description, date, time, venue, category, capacity }
+//   Same fields and validation as creation (FR-004a). Updates the existing
+//   Event row in place — registrations are never touched.
+// ─────────────────────────────────────────────
+export async function PUT(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  const auth = await requireOrganizer(request);
+  if (!auth.authorized) {
+    return NextResponse.json(
+      {
+        error:
+          auth.status === 403
+            ? "Access denied: Only organizers can edit events"
+            : auth.error ?? "Access denied",
+      },
+      { status: auth.status ?? 403 }
+    );
+  }
+
+  const { id } = params;
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+
+  const parsed = createEventSchema.safeParse(body);
+  if (!parsed.success) {
+    const firstIssue = parsed.error.issues[0]?.message ?? "Invalid event details";
+    const fieldErrors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) {
+      const field = issue.path[0];
+      if (typeof field === "string") {
+        fieldErrors[field] = issue.message;
+      }
+    }
+    return NextResponse.json(
+      { error: firstIssue, errors: fieldErrors },
+      { status: 400 }
+    );
+  }
+
+  const { name, description, date, time, venue, category, capacity } = parsed.data;
+  const expectedUpdatedAt =
+    typeof (body as any)?.updatedAt === "string" ? (body as any).updatedAt : undefined;
+
+  // ── Database path ──────────────────────────────────────────────────────────
+  try {
+    const result = await updateEventDetails({
+      eventId: id,
+      organizerId: auth.user.id,
+      data: { name, description, date, time, venue, category, capacity },
+      expectedUpdatedAt,
+    });
+
+    if (!result.success || !result.event) {
+      return NextResponse.json(
+        { error: result.error, errors: result.errors },
+        { status: result.statusCode }
+      );
+    }
+
+    const updated = result.event;
+    const formatted: StoredEvent = {
+      id: updated.id,
+      name: updated.name,
+      description: updated.description,
+      date: updated.date.toISOString().slice(0, 10),
+      time: updated.time,
+      venue: updated.venue,
+      category: updated.category,
+      capacity: updated.capacity,
+      status: updated.status as StoredEvent["status"],
+      organizerId: updated.organizerId,
+      organizerName: updated.organizerName,
+      createdAt: updated.createdAt.toISOString(),
+      updatedAt: updated.updatedAt.toISOString(),
+    };
+
+    // Mirror to in-memory store, used only once the DB path below throws
+    // PrismaClientInitializationError on a later request.
+    const idx = inMemoryEvents.findIndex((e) => e.id === id);
+    if (idx !== -1) inMemoryEvents[idx] = { ...inMemoryEvents[idx], ...formatted };
+
+    // FR-005b: notify registered participants of what changed, only after
+    // the update has been committed. A save with no participant-facing
+    // changes (e.g. capacity only) sends nothing. The before/after diff
+    // comes from updateEventDetails itself, computed from the exact rows
+    // its own transaction committed.
+    const notifications = await notifyParticipantsSafely({
+      kind: "UPDATE",
+      event: updated,
+      changes: result.changes ?? [],
+      // Anyone this same edit already promoted off the waitlist gets a
+      // WAITLIST_PROMOTION email, not a second, misleading "unchanged"
+      // EVENT_UPDATE one.
+      excludeUserIds: result.promotedUserIds ?? [],
+    });
+
+    return NextResponse.json({
+      event: formatted,
+      notifications,
+      ...(result.promotedCount ? { promotedCount: result.promotedCount } : {}),
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientInitializationError) {
+      const idx = inMemoryEvents.findIndex((e) => e.id === id);
+      if (idx === -1) {
+        return NextResponse.json({ error: "Event not found" }, { status: 404 });
+      }
+
+      if (inMemoryEvents[idx].organizerId !== auth.user.id) {
+        return NextResponse.json(
+          { error: "Forbidden: you are not the organizer of this event" },
+          { status: 403 }
+        );
+      }
+
+      if (inMemoryEvents[idx].status === "CANCELLED") {
+        return NextResponse.json(
+          { error: CANNOT_EDIT_CANCELLED_EVENT_ERROR },
+          { status: 409 }
+        );
+      }
+
+      if (isEventDatePast(inMemoryEvents[idx].date)) {
+        return NextResponse.json({ error: CANNOT_EDIT_PAST_EVENT_ERROR }, { status: 409 });
+      }
+
+      // Same optimistic-concurrency check as the DB path, so a stale edit
+      // doesn't silently clobber a newer one just because the DB is down.
+      if (
+        expectedUpdatedAt &&
+        new Date(expectedUpdatedAt).getTime() !==
+          new Date(inMemoryEvents[idx].updatedAt).getTime()
+      ) {
+        return NextResponse.json({ error: EVENT_EDIT_CONFLICT_ERROR }, { status: 409 });
+      }
+
+      // Unlike the DB path, this fallback cannot reject a capacity drop
+      // below confirmed registrations — the in-memory store has no
+      // Registration table to count against (see store.ts), the same
+      // documented limitation every other capacity-aware field on
+      // StoredEvent already carries in this degraded mode.
+
+      inMemoryEvents[idx] = {
+        ...inMemoryEvents[idx],
+        name,
+        description,
+        date,
+        time,
+        venue,
+        category,
+        capacity,
+        updatedAt: new Date().toISOString(),
+      };
+
+      return NextResponse.json({
+        event: inMemoryEvents[idx],
+        notifications: FALLBACK_NOTIFICATIONS,
+      });
+    }
+
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+      return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    }
+
+    console.error("[events/:id] failed to update event:", err);
+    return NextResponse.json({ error: "Failed to update event" }, { status: 500 });
   }
 }
 
