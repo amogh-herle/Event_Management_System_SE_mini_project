@@ -39,9 +39,14 @@ export function RoleSwitcher({ onRoleChange }: { onRoleChange?: (role: RoleType)
           Profile
         </Link>
         {role === "ADMIN" && (
-          <Link href="/admin/users" className="btn btn-sm btn-ghost">
-            Manage Users
-          </Link>
+          <>
+            <Link href="/admin/stats" className="btn btn-sm btn-ghost">
+              Platform Stats
+            </Link>
+            <Link href="/admin/users" className="btn btn-sm btn-ghost">
+              Manage Users
+            </Link>
+          </>
         )}
         <LogoutButton className="btn btn-sm btn-ghost" />
       </div>

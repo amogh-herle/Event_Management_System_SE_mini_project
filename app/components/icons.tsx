@@ -147,3 +147,20 @@ export const XCircleIcon = (p: IconProps) => (
     <line x1="9" y1="9" x2="15" y2="15" />
   </Svg>
 );
+
+export const BarChartIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <line x1="12" y1="20" x2="12" y2="10" />
+    <line x1="18" y1="20" x2="18" y2="4" />
+    <line x1="6" y1="20" x2="6" y2="16" />
+  </Svg>
+);
+
+export const RefreshIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M21 2v6h-6" />
+    <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+    <path d="M3 22v-6h6" />
+    <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+  </Svg>
+);
