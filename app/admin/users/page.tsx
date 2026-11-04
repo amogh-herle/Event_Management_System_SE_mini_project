@@ -93,6 +93,20 @@ export default function AdminUsersPage() {
       <header className="nav event-nav">
         <Brand />
         <div className="event-nav-actions">
+          <Link href="/admin/stats" className="btn btn-ghost">
+            Platform Stats
+          </Link>
+          <Link
+            href="/admin/users"
+            className="btn btn-ghost"
+            style={{ fontWeight: 700, color: "var(--primary)" }}
+          >
+            Manage Users
+          </Link>
+          {/* FR-006c */}
+          <Link href="/admin/categories" className="btn btn-ghost">
+            Manage categories
+          </Link>
           <Link href="/events" className="btn btn-ghost">
             Back to events
           </Link>
@@ -105,12 +119,6 @@ export default function AdminUsersPage() {
             <span className="badge badge-primary">FR-003c • Admin</span>
             <h1>Manage user accounts</h1>
             <p className="lede">View every account, suspend access, or remove one permanently.</p>
-          </div>
-          {/* FR-006c */}
-          <div className="directory-cta">
-            <Link href="/admin/categories" className="btn btn-ghost">
-              Manage categories
-            </Link>
           </div>
         </div>
 
