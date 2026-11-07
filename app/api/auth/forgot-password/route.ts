@@ -5,6 +5,7 @@ import { createPasswordResetToken } from "@/lib/tokens";
 import { sendMail } from "@/lib/mailer";
 import { passwordResetEmail } from "@/lib/emailTemplates";
 import { getPublicOrigin } from "@/lib/url";
+import { logger } from "@/lib/logger";
 
 const GENERIC_MESSAGE =
   "If that email is registered, a password reset link is on its way.";
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
     } catch (mailErr) {
       // Don't fail the request over a transient mail-delivery issue — the
       // generic response doesn't reveal whether anything was actually sent.
-      console.error("[forgot-password] failed to send email:", mailErr);
+      logger.error("forgot-password", "failed to send email", mailErr);
     }
   }
 

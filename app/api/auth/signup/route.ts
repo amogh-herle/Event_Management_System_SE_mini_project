@@ -7,6 +7,7 @@ import { createVerificationToken } from "@/lib/tokens";
 import { sendMail } from "@/lib/mailer";
 import { verificationEmail } from "@/lib/emailTemplates";
 import { getPublicOrigin } from "@/lib/url";
+import { logger } from "@/lib/logger";
 
 const DUPLICATE_EMAIL_ERROR = "An account with this email already exists";
 
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
     } catch (mailErr) {
       // Don't fail the signup over a transient mail-delivery issue — the
       // account exists and the user can request a new link via resend.
-      console.error("[signup] failed to send verification email:", mailErr);
+      logger.error("signup", "failed to send verification email", mailErr);
     }
 
     return NextResponse.json(

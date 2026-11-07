@@ -16,6 +16,7 @@ import {
   type ParticipantExportItem,
   type EventExportInfo,
 } from "@/lib/export";
+import { logger } from "@/lib/logger";
 
 export {
   exportParticipantsToCSV,
@@ -328,7 +329,7 @@ export async function sendWaitlistPromotionNotification(
     try {
       await listener(notification);
     } catch (e) {
-      console.error("[notifications] listener error:", e);
+      logger.error("notifications", "listener error", e);
     }
   }
 
@@ -336,7 +337,7 @@ export async function sendWaitlistPromotionNotification(
     try {
       await listener(notification);
     } catch (e) {
-      console.error("[notifications] waitlist listener error:", e);
+      logger.error("notifications", "waitlist listener error", e);
     }
   }
 
@@ -347,7 +348,7 @@ export async function sendWaitlistPromotionNotification(
     await sendMail(email, subject, html);
     return true;
   } catch (err) {
-    console.error(`[notifications] failed to send waitlist promotion email to ${email}:`, err);
+    logger.error("notifications", `failed to send waitlist promotion email to ${email}`, err);
     return false;
   }
 }
@@ -406,7 +407,7 @@ export async function sendRegistrationNotification(
     try {
       await listener(notification);
     } catch (e) {
-      console.error("[notifications] listener error:", e);
+      logger.error("notifications", "listener error", e);
     }
   }
 
@@ -417,7 +418,7 @@ export async function sendRegistrationNotification(
     await sendMail(email, subject, html);
     return true;
   } catch (err) {
-    console.error(`[notifications] failed to send registration confirmation email to ${email}:`, err);
+    logger.error("notifications", `failed to send registration confirmation email to ${email}`, err);
     return false;
   }
 }
@@ -474,7 +475,7 @@ export async function sendCancellationNotification(
     try {
       await listener(notification);
     } catch (e) {
-      console.error("[notifications] listener error:", e);
+      logger.error("notifications", "listener error", e);
     }
   }
 
@@ -485,7 +486,7 @@ export async function sendCancellationNotification(
     await sendMail(email, subject, html);
     return true;
   } catch (err) {
-    console.error(`[notifications] failed to send cancellation email to ${email}:`, err);
+    logger.error("notifications", `failed to send cancellation email to ${email}`, err);
     return false;
   }
 }
@@ -529,7 +530,7 @@ export async function sendEventReminderNotification(
     try {
       await listener(notification);
     } catch (e) {
-      console.error("[notifications] listener error:", e);
+      logger.error("notifications", "listener error", e);
     }
   }
 
@@ -540,7 +541,7 @@ export async function sendEventReminderNotification(
     await sendMail(email, subject, html);
     return true;
   } catch (err) {
-    console.error(`[notifications] failed to send event reminder email to ${email}:`, err);
+    logger.error("notifications", `failed to send event reminder email to ${email}`, err);
     return false;
   }
 }
@@ -671,7 +672,7 @@ export async function notifyEventParticipants(
       regs = Array.from(db.registrations.values()).filter((r: any) => r.eventId === event.id);
     }
   } catch (err) {
-    console.error(`[notifications] failed to load participants for event ${event.id}:`, err);
+    logger.error("notifications", `failed to load participants for event ${event.id}`, err);
     return result;
   }
 
@@ -704,7 +705,7 @@ export async function notifyEventParticipants(
           user = db.users.get(reg.userId);
         }
       } catch (err) {
-        console.error(`[notifications] failed to load participant ${reg.userId}:`, err);
+        logger.error("notifications", `failed to load participant ${reg.userId}`, err);
       }
     }
 
@@ -740,7 +741,7 @@ export async function notifyEventParticipants(
       try {
         await listener(notification);
       } catch (e) {
-        console.error("[notifications] listener error:", e);
+        logger.error("notifications", "listener error", e);
       }
     }
 
@@ -754,7 +755,7 @@ export async function notifyEventParticipants(
       result.sent++;
     } catch (err) {
       result.failed++;
-      console.error(`[notifications] failed to send event ${kind.toLowerCase()} email to ${email}:`, err);
+      logger.error("notifications", `failed to send event ${kind.toLowerCase()} email to ${email}`, err);
     }
   }
 
@@ -940,10 +941,7 @@ export async function sendEventReminders(
                 data: { reminderSentAt: new Date() },
               });
             } catch (err) {
-              console.error(
-                `[reminders] failed to mark registration ${reg.id} as reminded:`,
-                err
-              );
+              logger.error("reminders", `failed to mark registration ${reg.id} as reminded`, err);
             }
           }
         }
@@ -1272,7 +1270,7 @@ export async function registerForEvent(
     try {
       await notifyBox.current();
     } catch (err) {
-      console.error("[registration] post-commit notification dispatch failed:", err);
+      logger.error("registration", "post-commit notification dispatch failed", err);
     }
   }
 
@@ -1745,7 +1743,7 @@ export async function cancelRegistration(
       try {
         await notify();
       } catch (err) {
-        console.error("[registration] post-commit notification dispatch failed:", err);
+        logger.error("registration", "post-commit notification dispatch failed", err);
       }
     }
   }
@@ -1980,7 +1978,7 @@ export async function updateEventDetails(
       try {
         await notify();
       } catch (err) {
-        console.error("[registration] post-commit notification dispatch failed:", err);
+        logger.error("registration", "post-commit notification dispatch failed", err);
       }
     }
   }
@@ -2403,10 +2401,7 @@ export async function listRegistrations(
         try {
           pos = await calculateWaitlistPosition(r.userId, r.eventId, r.createdAt, db);
         } catch (err) {
-          console.error(
-            `[registration] failed to compute waitlist position for user ${r.userId} on event ${r.eventId}:`,
-            err
-          );
+          logger.error("registration", `failed to compute waitlist position for user ${r.userId} on event ${r.eventId}`, err);
         }
       }
       const formatted = formatRegistration(r);

@@ -5,6 +5,7 @@ import { createEventSchema } from "@/lib/validation";
 import { getAuthUserFromRequest, requireOrganizer, ensureDemoUserRow } from "@/lib/auth";
 import { StoredEvent, inMemoryEvents } from "@/app/api/events/store";
 import { buildEventFilterWhere, matchesEventFilters, parseEventFilters } from "@/lib/eventFilters";
+import { logger } from "@/lib/logger";
 
 export type { StoredEvent };
 
@@ -63,7 +64,7 @@ export async function POST(request: Request) {
       categoryId = cat.id;
     } catch (catErr) {
       if (!(catErr instanceof Prisma.PrismaClientKnownRequestError && catErr.code === "P2021")) {
-        console.error("[events] category upsert failed, continuing without category link:", catErr);
+        logger.error("events", "category upsert failed, continuing without category link", catErr);
       }
     }
 
@@ -128,7 +129,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ event: fallbackEvent }, { status: 201 });
     }
 
-    console.error("[events] failed to create event:", dbErr);
+    logger.error("events", "failed to create event", dbErr);
     return NextResponse.json({ error: "Failed to create event" }, { status: 500 });
   }
 }
@@ -237,7 +238,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ events: mapped });
   } catch (err) {
     if (!(err instanceof Prisma.PrismaClientInitializationError)) {
-      console.error("[events] failed to list events:", err);
+      logger.error("events", "failed to list events", err);
       return NextResponse.json({ error: "Failed to load events" }, { status: 500 });
     }
 

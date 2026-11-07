@@ -5,11 +5,10 @@ name: CI
 #   - FR-001..FR-010 behavior: tests/*.test.ts run against a real Postgres
 #     service, the same engine production uses (SERIALIZABLE transactions
 #     for FR-008 concurrency control need real Postgres, not a mock).
-#   - NFR-007 (Maintainability): reports line/branch/function coverage for
-#     the core business logic modules (lib/registration.ts, lib/mailer.ts,
-#     the registration/waitlist/reminder API routes) against the SRS's 80%
-#     line-coverage target. Report-only for now (see job comment) — current
-#     coverage is ~78%, just under target.
+#   - NFR-007 (Maintainability): enforces the SRS's 80% line-coverage
+#     target for the core business logic modules (registration, capacity
+#     check, waitlist promotion, notifications, central logger) - see
+#     scripts/check-core-coverage.ts. A module below 80% fails the build.
 #   - Type safety and a production build, so a change that breaks `next
 #     build` or introduces a type error never reaches main.
 
@@ -50,7 +49,9 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # Node 22 (LTS). Node 20 is end-of-life and its test runner does
+          # not discover .ts test files, so it silently ran zero tests.
+          node-version: "22"
           cache: npm
 
       - name: Install dependencies
@@ -68,23 +69,14 @@ jobs:
       # NODE_ENV=test (above) makes lib/mailer.ts use an in-memory
       # jsonTransport instead of real SMTP, so this never sends real email
       # even if EMAIL_USER/EMAIL_PASS end up set in the environment.
-      - name: Run test suite
-        run: npm test
+      # Runs the whole suite once, writing an lcov coverage report.
+      - name: Run test suite (with coverage)
+        run: npm run test:coverage
 
-      # Report-only: the SRS (NFR-007) targets 80% line coverage for core
-      # business logic. Overall project coverage is ~88%, but the core
-      # modules alone (lib/registration.ts, lib/mailer.ts, lib/auth.ts, the
-      # registration/waitlist/reminder routes) are currently ~78%. This step
-      # is informational so it doesn't block merges while that gap closes —
-      # drop `continue-on-error` once coverage clears 80% to make it a real
-      # gate.
-      - name: Check test coverage against NFR-007 (80% line target, report only)
-        continue-on-error: true
-        run: |
-          npx tsx --test --experimental-test-coverage \
-            --test-coverage-exclude='tests/**' \
-            --test-coverage-exclude='scripts/**' \
-            --test-coverage-lines=80
+      # NFR-007: fails the build if any core module, or the core modules
+      # combined, drop below 80% line coverage.
+      - name: Check core-module coverage (NFR-007, 80% line target)
+        run: npx tsx scripts/check-core-coverage.ts coverage/lcov.info
 
       - name: Build production bundle
         run: npm run build
