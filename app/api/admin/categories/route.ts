@@ -7,6 +7,7 @@ import {
   parseCategoryBody,
   toAdminCategory,
 } from "@/lib/categories";
+import { logger } from "@/lib/logger";
 
 // GET /api/admin/categories — FR-006c: admin views every category and how
 // many events use it.
@@ -20,7 +21,7 @@ export async function GET(request: Request) {
     const categories = await prisma.category.findMany({ orderBy: { name: "asc" } });
     return NextResponse.json({ categories: await Promise.all(categories.map(toAdminCategory)) });
   } catch (err) {
-    console.error("[admin/categories] failed to list categories:", err);
+    logger.error("admin/categories", "failed to list categories", err);
     return NextResponse.json({ error: "Failed to load categories" }, { status: 500 });
   }
 }
@@ -54,7 +55,7 @@ export async function POST(request: Request) {
     if (isUniqueViolation(err)) {
       return NextResponse.json({ error: "A category with this name already exists" }, { status: 409 });
     }
-    console.error("[admin/categories] failed to create category:", err);
+    logger.error("admin/categories", "failed to create category", err);
     return NextResponse.json({ error: "Failed to create category" }, { status: 500 });
   }
 }
