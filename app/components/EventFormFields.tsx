@@ -331,7 +331,7 @@ export function EventPreviewPanel({
             </span>
           </div>
 
-          <h3 className="preview-title">{form.name || "Event Title will appear here"}</h3>
+          <h2 className="preview-title">{form.name || "Event Title will appear here"}</h2>
 
           <p className="preview-description">
             {form.description ||
@@ -355,7 +355,7 @@ export function EventPreviewPanel({
         </div>
 
         <div className="preview-guidance">
-          <h4>{acceptanceHeading}</h4>
+          <h3>{acceptanceHeading}</h3>
           <ul>
             {acceptanceCriteria.map((item) => (
               <li key={item}>

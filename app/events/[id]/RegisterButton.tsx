@@ -334,7 +334,7 @@ export function RegisterButton({
               border: "1px solid var(--border)",
             }}
           >
-            <h4 style={{ margin: "0 0 0.5rem 0" }}>Join the Waitlist</h4>
+            <h2 style={{ margin: "0 0 0.5rem 0", fontSize: "1rem" }}>Join the Waitlist</h2>
             <p style={{ margin: "0 0 1rem 0", color: "var(--text-muted)" }}>
               If an attendee cancels their seat, the system will automatically promote waitlisted participants in the order they joined and notify you immediately.
             </p>
@@ -400,7 +400,7 @@ export function RegisterButton({
             border: "1px solid var(--border)",
           }}
         >
-          <h4 style={{ margin: "0 0 0.5rem 0" }}>Confirm your registration</h4>
+          <h2 style={{ margin: "0 0 0.5rem 0", fontSize: "1rem" }}>Confirm your registration</h2>
           <p style={{ margin: "0 0 1rem 0", color: "var(--text-muted)" }}>
             Are you sure you want to register for this event? Exactly one seat will be reserved for you.
           </p>

@@ -133,13 +133,14 @@ export default async function EventPage({ params }: EventPageProps) {
           className="card"
           style={{
             background: "var(--surface)",
-            padding: "2rem",
+            padding: "clamp(1rem, 5vw, 2rem)",
+            minWidth: 0,
             borderRadius: "var(--radius-lg)",
             border: "1px solid var(--border)",
             boxShadow: "var(--shadow)",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem" }}>
             <div>
               {event.category && (
                 <span
@@ -214,7 +215,7 @@ export default async function EventPage({ params }: EventPageProps) {
             className="event-meta-grid"
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(200px, 100%), 1fr))",
               gap: "1rem",
               padding: "1rem",
               background: "var(--surface-2)",
