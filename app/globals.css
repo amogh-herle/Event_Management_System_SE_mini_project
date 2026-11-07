@@ -784,7 +784,7 @@ a:hover {
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
 }
-.role-card h3 {
+.role-card h2 {
   margin: 0 0 4px;
   font-size: 17px;
 }
@@ -940,7 +940,7 @@ a:hover {
 /* Event Form Layout */
 .event-form-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 32px;
 }
 
@@ -1196,7 +1196,7 @@ a:hover {
   border-top: 1px solid var(--border);
 }
 
-.preview-guidance h4 {
+.preview-guidance h3 {
   margin: 0 0 10px;
   font-size: 13px;
   text-transform: uppercase;
@@ -1429,7 +1429,7 @@ a:hover {
   color: var(--primary);
 }
 
-.empty-state-card h3 {
+.empty-state-card h2 {
   color: var(--text);
   margin: 4px 0 0;
   font-size: 20px;
@@ -1591,4 +1591,73 @@ a:hover {
 :root {
   --warning: #b45309;
   --warning-soft: #fef3c7;
+}
+
+/* ==========================================================================
+   NFR-006: Accessibility (WCAG 2.1 AA) & responsive layout from 320px
+   ========================================================================== */
+
+/* SC 2.4.1 Bypass Blocks: skip link, visible only on keyboard focus. */
+.skip-link {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1000;
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 700;
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+.skip-link:focus,
+.skip-link:focus-visible {
+  transform: none;
+  color: var(--on-primary);
+}
+/* <main> only receives focus programmatically from the skip link. */
+main[tabindex="-1"]:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+/* SC 1.4.10 Reflow: headers and their action groups wrap instead of
+   forcing horizontal scrolling on 320px-wide screens. */
+.nav,
+.event-nav {
+  flex-wrap: wrap;
+}
+.nav-links,
+.event-nav-actions,
+.role-switcher-container {
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
+}
+@media (max-width: 479px) {
+  .event-nav {
+    padding: 12px 16px;
+  }
+  .nav-links .btn {
+    padding: 0 12px;
+  }
+  /* A wrapped pill would render as an oval; use a rounded box instead. */
+  .role-switcher-container {
+    border-radius: var(--radius);
+  }
+}
+
+/* Wide tables scroll inside their own region, not the whole page. */
+.table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.form-submit-row {
+  flex-wrap: wrap;
+}
+@media (max-width: 479px) {
+  .event-form-card {
+    padding: 20px 16px;
+  }
 }
