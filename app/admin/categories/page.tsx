@@ -163,7 +163,7 @@ export default function AdminCategoriesPage() {
         </div>
       </header>
 
-      <main className="events-directory-container">
+      <main id="main" className="events-directory-container">
         <div className="directory-header">
           <div>
             <span className="badge badge-primary">FR-006c • Admin</span>
@@ -184,7 +184,7 @@ export default function AdminCategoriesPage() {
         {loadState === "unauthorized" && (
           <div className="empty-state-card">
             <AlertIcon size={32} />
-            <h3>Not signed in</h3>
+            <h2>Not signed in</h2>
             <p>You need to be logged in with an admin account to manage categories.</p>
             <Link href="/login" className="btn btn-primary">Log in</Link>
           </div>
@@ -193,7 +193,7 @@ export default function AdminCategoriesPage() {
         {loadState === "forbidden" && (
           <div className="empty-state-card">
             <ShieldIcon size={32} />
-            <h3>Access denied</h3>
+            <h2>Access denied</h2>
             <p>Only admin accounts can manage categories here.</p>
           </div>
         )}
@@ -201,7 +201,7 @@ export default function AdminCategoriesPage() {
         {loadState === "error" && (
           <div className="empty-state-card">
             <AlertIcon size={32} />
-            <h3>Couldn&apos;t load categories</h3>
+            <h2>Couldn&apos;t load categories</h2>
             <p>Something went wrong while loading the category list.</p>
             <button type="button" className="btn btn-primary" onClick={loadCategories}>
               Try again
@@ -245,7 +245,7 @@ export default function AdminCategoriesPage() {
             {categories.length === 0 ? (
               <div className="empty-state-card">
                 <TagIcon size={32} />
-                <h3>No categories yet</h3>
+                <h2>No categories yet</h2>
                 <p>
                   Until you add one, organizers choose from the built-in default list. Once you add
                   a category, the event forms show the categories managed here.
@@ -261,6 +261,9 @@ export default function AdminCategoriesPage() {
                     border: "1px solid var(--border)",
                     overflowX: "auto",
                   }}
+                  role="region"
+                  aria-label="Categories"
+                  tabIndex={0}
                 >
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>

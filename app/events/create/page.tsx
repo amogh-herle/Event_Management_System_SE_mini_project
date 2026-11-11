@@ -155,7 +155,7 @@ export default function CreateEventPage() {
         </div>
       </header>
 
-      <main className="event-create-container">
+      <main id="main" className="event-create-container">
         {/* ST_02 Access Control Check: Participant role blocked */}
         {role === "PARTICIPANT" ? (
           <section className="access-denied-card" role="alert" aria-live="assertive">

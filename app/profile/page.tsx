@@ -78,7 +78,7 @@ export default function ProfilePage() {
         </div>
       </header>
 
-      <main className="events-directory-container" style={{ maxWidth: "560px" }}>
+      <main id="main" className="events-directory-container" style={{ maxWidth: "560px" }}>
         <div className="directory-header">
           <div>
             <span className="badge badge-primary">Account</span>
@@ -92,7 +92,7 @@ export default function ProfilePage() {
         {user === null && (
           <div className="empty-state-card">
             <AlertIcon size={32} />
-            <h3>Not signed in</h3>
+            <h2>Not signed in</h2>
             <p>You need to be logged in to view or edit your profile.</p>
             <Link href="/login" className="btn btn-primary">Log in</Link>
           </div>
@@ -162,9 +162,9 @@ export default function ProfilePage() {
               </div>
 
               <div className="field">
-                <label className="field-label">Role</label>
+                <label className="field-label" htmlFor="role">Role</label>
                 <div className="input-wrap">
-                  <input className="input" type="text" value={user.role} disabled aria-readonly="true" />
+                  <input id="role" className="input" type="text" value={user.role} disabled aria-readonly="true" />
                 </div>
               </div>
 
