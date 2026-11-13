@@ -1,0 +1,125 @@
+##### scripts/test_fr001_fr003bc.ts — 2026-11-13T07:12Z
+
+FR-001a — account creation
+  ✅ PASS: TC-1: valid signup returns 201
+  ✅ PASS: TC-1: new account is unverified
+  ✅ PASS: TC-2: malformed email rejected (400)
+  ✅ PASS: TC-3: duplicate email rejected (409)
+  ✅ PASS: TC-4: password stored as a bcrypt hash, never plain text
+  ✅ PASS: TC-5: unverified account cannot log in (403)
+
+FR-001b — email verification
+  ✅ PASS: TC-6: valid token activates the account (200)
+  ✅ PASS: TC-7: login succeeds after verification (200)
+  ✅ PASS: TC-8: a used token is rejected (400)
+  ✅ PASS: TC-9: an expired token is rejected as expired (400)
+  ✅ PASS: TC-10: a garbage token is rejected as invalid (400)
+
+FR-003b — profile update
+  ✅ PASS: TC-11: name update returns 200 and persists on next read
+  ✅ PASS: TC-12: unauthenticated profile update rejected (401)
+  ✅ PASS: TC-13: empty name rejected (400)
+  ✅ PASS: TC-14: a user cannot escalate their own role via the profile endpoint
+
+FR-003c — admin account management
+  ✅ PASS: TC-15: admin can list users (200, target present)
+  ✅ PASS: TC-16: non-admin cannot list users (403)
+  ✅ PASS: TC-17: suspend returns 200, blocks new login (403) and invalidates the live session
+  ✅ PASS: TC-18: unsuspend restores login (200)
+  ✅ PASS: TC-19: admin cannot suspend their own account (400)
+  ✅ PASS: TC-21: non-admin cannot delete a user (403)
+  ✅ PASS: TC-20: delete returns 204 and the account can no longer log in (401)
+
+=== Results: 22 passed, 0 failed ===
+
+##### scripts/test_fr002a.ts — 2026-11-13T07:12Z
+
+=== FR-002a Smoke Tests ===
+
+  ✅ PASS: TC-1: Valid credentials return 200
+  ✅ PASS: TC-1: Login sets a session cookie
+  ✅ PASS: TC-1: Response never includes passwordHash
+  ✅ PASS: TC-2: Wrong password returns 401
+  ✅ PASS: TC-3: Unknown email returns 401
+  ✅ PASS: TC-3: Same error message as wrong-password case (no account enumeration)
+  ✅ PASS: TC-4: Unverified account returns 403
+  ✅ PASS: TC-5: Suspended account returns 403 at login
+  ✅ PASS: TC-6: Logout returns 200
+  ✅ PASS: TC-6: Logout response clears the session cookie (Max-Age=0)
+
+=== Results: 10 passed, 0 failed ===
+
+
+##### scripts/test_fr002b.ts — 2026-11-13T07:12Z
+
+=== FR-002b Smoke Tests ===
+
+  ✅ PASS: TC-1: Forgot-password for existing account returns 200
+  ✅ PASS: TC-2: Unknown email also returns 200
+  ✅ PASS: TC-2: Same message as a real account (no account enumeration)
+  ✅ PASS: TC-3: Valid token resets password (200)
+  ✅ PASS: TC-4: Old password no longer logs in (401)
+  ✅ PASS: TC-4: New password logs in (200)
+  ✅ PASS: TC-5: Reusing a consumed token is rejected (400)
+  ✅ PASS: TC-5: Rejected as invalid, not expired
+  ✅ PASS: TC-6: Garbage token is rejected (400, invalid)
+  ✅ PASS: TC-6: Rejected as invalid
+  ✅ PASS: TC-7: Expired token is rejected (400, expired)
+  ✅ PASS: TC-7: Rejected as expired specifically
+  ✅ PASS: TC-8: Weak password rejected by validation (400)
+
+=== Results: 13 passed, 0 failed ===
+
+
+##### scripts/test_fr003a.ts — 2026-11-13T07:12Z
+
+=== FR-003a Smoke Tests ===
+
+  ✅ PASS: TC-1 setup: participant login succeeds
+  ✅ PASS: TC-1: Real session with PARTICIPANT role is blocked from creating an event (403)
+  ✅ PASS: TC-2 setup: organizer login succeeds
+  ✅ PASS: TC-2: Real session with ORGANIZER role creates an event (201)
+  ✅ PASS: TC-2: Event is attributed to the real logged-in user's own id, not a shared demo id
+  ✅ PASS: TC-3: A still-unexpired session for a now-suspended user is blocked (401) on the very next request
+  ✅ PASS: TC-4: The demo x-user-role header still creates an event when there's no session
+  ✅ PASS: TC-4: Demo header still attributes to the shared demo id, as before
+
+=== Results: 8 passed, 0 failed ===
+
+
+##### scripts/test_fr004a.ts — 2026-11-13T07:12Z
+=== RUNNING FR-004a AUTOMATED TEST SUITE ===
+
+[PASS] UT_01: Verify an event is created when all required fields are valid
+[PASS] UT_02: Verify event creation fails when a required field is missing (capacity blank)
+[PASS] IT_02: Verify capacity field only accepts a positive integer (capacity: -5 rejected)
+[PASS] ST_02: Verify a Participant cannot create an event via access control (403 Forbidden)
+[PASS] Access Control: Organizer is authorized to create events
+[PASS] Access Control: a request with no x-user-role header and no cookie is rejected (401), not defaulted to Organizer
+[PASS] Validation: Rejects missing event name
+[PASS] Validation: Rejects missing date
+[PASS] Validation: Rejects capacity = 0
+
+=== ALL 9/9 FR-004a TESTS PASSED SUCCESSFULLY! ===
+
+
+##### scripts/test_fr005a.ts — 2026-11-13T07:12Z
+
+=== FR-005a Smoke Tests ===
+
+  ✅ PASS: Create test event returns 201
+  ✅ PASS: Created event has an id
+  ✅ PASS: TC-2: Cancel returns 200
+  ✅ PASS: TC-2: Cancelled event status is CANCELLED
+  ✅ PASS: TC-2b: Already-cancelled event returns 409
+  ✅ PASS: TC-3: Cancelled event absent from ?active=true listing
+  ✅ PASS: TC-4: Participant cancel blocked (403)
+  ✅ PASS: TC-5: Delete returns 204
+  ✅ PASS: TC-5b: Deleted event returns 404
+  ✅ PASS: TC-6: Participant delete blocked (403)
+  ✅ PASS: TC-7: Cancel with no auth header returns 401
+  ✅ PASS: TC-7b: Delete with no auth header returns 401
+
+=== Results: 12 passed, 0 failed ===
+
+

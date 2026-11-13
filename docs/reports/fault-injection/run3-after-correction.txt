@@ -1,0 +1,498 @@
+npm notice run event-management-system@0.1.0 npx
+npm notice run 'tsx' --test --test-reporter=spec
+[admin/categories] failed to list categories: Error: connect ECONNREFUSED 10.0.0.5:5432 password=secret
+    at Object.boom (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/admin-categories.test.ts:411:11)
+    at GET (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/app/api/admin/categories/route.ts:20:46)
+    at async TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/admin-categories.test.ts:414:16)
+    at async Test.run (node:internal/test_runner/test:1054:7)
+    at async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+[admin/categories/:id] failed to rename category: Error: connect ECONNREFUSED 10.0.0.5:5432 password=secret
+    at Object.boom (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/admin-categories.test.ts:411:11)
+    at PATCH (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/app/api/admin/categories/[id]/route.ts:37:44)
+    at async TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/admin-categories.test.ts:419:18)
+    at async Test.run (node:internal/test_runner/test:1054:7)
+    at async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+[admin/categories/:id] failed to delete category: Error: connect ECONNREFUSED 10.0.0.5:5432 password=secret
+    at Object.boom (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/admin-categories.test.ts:411:11)
+    at DELETE (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/app/api/admin/categories/[id]/route.ts:86:44)
+    at async TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/admin-categories.test.ts:426:18)
+    at async Test.run (node:internal/test_runner/test:1054:7)
+    at async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+✔ FR-006c: admin can view categories with how many events use each 
+✔ FR-006c: admin category list handles an empty list 
+✔ FR-006c: admin can add a category (trimmed) 
+✔ FR-006c: adding a duplicate category is rejected regardless of case 
+✔ FR-006c: names that differ only by LIKE wildcards are not treated as duplicates 
+✔ FR-006c: invalid category names are rejected with 400 
+✔ FR-006c: a unique-constraint race on add returns 409, not 500 
+✔ FR-006c: renaming a category updates every event using it, platform-wide 
+✔ FR-006c: a rename shows up immediately in the event listing and public category list 
+✔ FR-006c: renaming to another category's name is rejected; a case-only change is allowed 
+✔ FR-006c: renaming with an invalid name or unknown id fails without changes 
+✔ FR-006c: admin can remove a category no event uses 
+✔ FR-006c: a category used by events (even cancelled or name-only links) can't be removed 
+✔ FR-006c: an event linked to the category mid-delete returns 409, not 500 
+✔ FR-006c: removing an unknown category returns 404 
+✔ FR-006c: non-admins can't view or change categories 
+✔ FR-006c: a suspended admin is treated as signed out 
+✔ FR-006c: database failures return a generic 500 without internal details 
+✔ FR-006c: the public category list is dynamic and reflects admin changes immediately 
+✔ FR-006c: existing event creation still works and links to the managed category 
+✔ FR-010b / UT_01: getPlatformStats computes live database totals accurately 
+✔ FR-010b / UT_02: Date range and category filtering with graceful zero activity (UC-17 Step 3a) 
+✔ FR-010b / UT_03: Rejects inverted date ranges and malformed dates 
+✔ FR-010b / UT_04: Fallback to cached snapshot on aggregation failure (UC-17 Step 2a) 
+✔ FR-010b / IT_01: GET /api/admin/stats returns 200 with live platform stats for ADMIN session 
+✔ FR-010b / IT_02: RBAC enforcement — non-admin roles and unauthenticated callers are rejected 
+✔ FR-010b / IT_03: Query parameters validation on GET /api/admin/stats 
+✔ FR-010b / IT_04: Alias endpoint GET /api/admin/statistics behaves identically 
+✔ FR-010b / ST_01: Platform Statistics shows exact database totals for 50 events, 300 users, 900 registrations 
+✔ API: POST /api/events/[id]/register returns 400 on malformed JSON 
+✔ API: POST /api/events/[id]/register registers the session user 
+✔ API: POST /api/events/[id]/register ignores a client-supplied userId and uses the session instead 
+✔ API: POST /api/events/[id]/register returns 409 when user is already registered 
+✔ API: POST /api/events/[id]/register returns 400 when event is cancelled 
+✔ API: POST /api/events/[id]/register returns 404 when event not found 
+✔ API: POST /api/events/[id]/register returns 401 when no auth provided 
+✔ API: POST /api/events/[id]/register returns 401 for an unauthenticated x-user-id header (no longer trusted) 
+✔ API: POST /api/events/[id]/register returns 400 when event is full 
+✔ API: GET /api/events/[id]/register returns 401 when no auth provided 
+✔ API: GET /api/events/[id]/register returns registration state for the session user 
+✔ API: GET /api/events/[id]/register ignores a client-supplied userId query param and only reports the session user's own status 
+✔ API: POST /api/registrations returns 400 when eventId is missing 
+✔ API: POST /api/registrations returns 401 when no session is present 
+✔ API: POST /api/registrations returns 400 when event is full 
+✔ API: POST /api/registrations creates registration and GET lists it for the session user 
+✔ API: GET /api/registrations does not leak another user's registrations via a userId query param 
+✔ API: POST /api/events/[id]/register with waitlist: true joins waitlist when event is full 
+✔ API: GET /api/events/[id]/register returns isWaitlisted and waitlistPosition for waitlisted user 
+✔ API: POST /api/events/[id]/waitlist explicitly joins waitlist when event is full 
+✔ API: DELETE /api/events/[id]/register cancels registration and auto-promotes waitlisted user 
+✔ API: DELETE /api/registrations cancels registration and auto-promotes waitlisted user 
+✔ API: POST /api/registrations with waitlist: true joins waitlist when event is full 
+✔ API: POST /api/events/[id]/register sends confirmation notification to registered participant 
+✔ API: DELETE /api/events/[id]/register sends cancellation notification to participant 
+✔ API: DELETE /api/registrations sends cancellation notification to participant 
+✔ API: GET /api/registrations returns registrations list for current participant 
+✔ API: POST /api/reminders and GET /api/reminders processes upcoming event reminders 
+✔ API: GET /api/events/[id]/export returns 401 when no session is present 
+✔ API: GET /api/events/[id]/export returns 404 when event not found 
+✔ API: GET /api/events/[id]/export returns 403 when user is participant 
+✔ API: GET /api/events/[id]/export returns 403 when user is a different organizer 
+✔ API: GET /api/events/[id]/export?format=csv returns 200, CSV header, and participant rows for owner 
+✔ API: GET /api/events/[id]/export?format=pdf returns 200 and valid PDF document for owner 
+✔ API: GET /api/events/[id]/export?format=json returns full report payload for owner 
+✔ API: GET /api/events/[id]/export allows admin to export participant list 
+✔ API: GET /api/registrations?eventId=... returns 403 for non-owning organizer 
+✔ API: GET /api/registrations?eventId=... returns live database capacity totals for owner 
+✔ API: GET /api/registrations?eventId=...&format=csv is denied for a non-owning participant (IDOR regression) 
+✔ API: GET /api/registrations?eventId=...&format=pdf is denied for a non-owning participant (IDOR regression) 
+✔ API: GET /api/registrations?eventId=...&format=csv returns CSV export 
+✔ API: GET /api/registrations?eventId=...&format=pdf returns PDF export 
+▶ lib/emailTemplates.ts
+  ✔ verificationEmail includes the verify link and escapes the name 
+  ✔ passwordResetEmail includes the reset link and escapes the name 
+  ✔ waitlistPromotionEmail renders the date line when a date is given 
+  ✔ waitlistPromotionEmail omits the date line when no date is given 
+  ✔ registrationConfirmationEmail renders date, time and venue when all provided 
+  ✔ registrationConfirmationEmail omits date, time and venue when absent 
+  ✔ registrationCancellationEmail renders the date line when given 
+  ✔ registrationCancellationEmail omits the date line when absent 
+  ✔ eventReminderEmail always renders the date and optionally time/venue 
+  ✔ eventCancelledEmail renders all optional fields when provided and omits them otherwise 
+  ✔ eventUpdatedEmail renders a before -> after line for changed fields 
+  ✔ eventUpdatedEmail renders a single-value line for added fields with no before value 
+✔ lib/emailTemplates.ts 
+✔ FR-004b: PUT /api/events/[id] returns 401 when no auth provided 
+✔ FR-004b: PUT /api/events/[id] returns 403 for a participant 
+✔ FR-004b: PUT /api/events/[id] returns 403 for an organizer who doesn't own the event 
+✔ FR-004b: PUT /api/events/[id] returns 404 when event not found 
+✔ FR-004b: PUT /api/events/[id] returns 400 on malformed JSON 
+✔ FR-004b: PUT /api/events/[id] rejects an empty required field with 400 and field errors 
+✔ FR-004b: PUT /api/events/[id] rejects a non-positive capacity with 400 
+✔ FR-004b: PUT /api/events/[id] saves all edited fields to the existing event (no duplicate) 
+✔ FR-004b: PUT /api/events/[id] keeps existing registrations intact 
+✔ FR-004b: updated details are returned immediately by GET /api/events/[id] 
+✔ FR-004b: PUT /api/events/[id] rejects capacity below confirmed registrations with 409 
+✔ FR-004b: PUT /api/events/[id] allows capacity equal to confirmed registrations 
+✔ FR-004b: PUT /api/events/[id] returns 409 for a cancelled event 
+[events/:id] failed to update event: Error: simulated category upsert failure
+    at Object.mockDb.category.upsert (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/event-edit.test.ts:347:11)
+    at <anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:1856:41)
+    at async withSerializableTransaction (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:231:12)
+    at async withEventLock (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:200:12)
+    at async updateEventDetails (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:1792:18)
+    at async PUT (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/app/api/events/[id]/route.ts:277:20)
+    at async TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/event-edit.test.ts:350:17)
+    at async Test.run (node:internal/test_runner/test:1054:7)
+    at async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+✔ FR-004b: raising capacity auto-promotes the earliest waitlisted registration 
+✔ FR-004b: PUT /api/events/[id] returns 409 when the event was changed elsewhere (optimistic concurrency) 
+✔ FR-004b: PUT /api/events/[id] returns 500 instead of silently dropping the category relation on upsert failure 
+✔ FR-004b: PUT /api/events/[id] returns 409 for an event whose date has passed 
+✔ FR-004b: PUT /api/events/[id] allows editing an event happening today 
+✔ FR-004b: fallback PUT rejects a stale edit with 409, like the DB path 
+✔ FR-004b: fallback PUT accepts an edit whose updatedAt matches 
+✔ FR-004b: fallback PUT returns 409 for a past event 
+✔ FR-005b: cancelling an event notifies its confirmed and waitlisted participants 
+✔ FR-005b: cancellation skips participants who already cancelled and other events' participants 
+✔ FR-005b: cancellation keeps participant registration records intact 
+✔ FR-005b: unauthorized cancellation attempts are rejected and notify nobody 
+✔ FR-005b: cancelling a missing event fails and notifies nobody 
+✔ FR-005b: re-cancelling an already-cancelled event does not notify participants again 
+[notifications] failed to send event cancellation email to amit.rao@test.com: Error: SMTP provider unavailable
+    at Mail.proto.sendMail (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/event-notifications.test.ts:188:11)
+    at sendMail (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/mailer.ts:62:34)
+    at async notifyEventParticipants (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:753:7)
+    at async notifyParticipantsSafely (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/app/api/events/[id]/route.ts:27:12)
+    at async PATCH (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/app/api/events/[id]/route.ts:161:27)
+    at async <anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/event-notifications.test.ts:304:17)
+    at async withFailingMailProvider (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/event-notifications.test.ts:191:5)
+    at async TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/event-notifications.test.ts:303:3)
+    at async Test.run (node:internal/test_runner/test:1054:7)
+    at async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+[notifications] failed to send event cancellation email to priya.nair@test.com: Error: SMTP provider unavailable
+    at Mail.proto.sendMail (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/event-notifications.test.ts:188:11)
+    at sendMail (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/mailer.ts:62:34)
+    at async notifyEventParticipants (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:753:7)
+    at async notifyParticipantsSafely (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/app/api/events/[id]/route.ts:27:12)
+    at async PATCH (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/app/api/events/[id]/route.ts:161:27)
+    at async <anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/event-notifications.test.ts:304:17)
+    at async withFailingMailProvider (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/event-notifications.test.ts:191:5)
+    at async TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/event-notifications.test.ts:303:3)
+    at async Test.run (node:internal/test_runner/test:1054:7)
+    at async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+[notifications] failed to load participants for event evt1: Error: connection reset
+    at Object.mockDb.registration.findMany (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/event-notifications.test.ts:315:11)
+    at notifyEventParticipants (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:663:36)
+    at notifyParticipantsSafely (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/app/api/events/[id]/route.ts:27:18)
+    at PATCH (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/app/api/events/[id]/route.ts:161:33)
+    at async TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/event-notifications.test.ts:317:15)
+    at async Test.run (node:internal/test_runner/test:1054:7)
+    at async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+✔ FR-005b: two concurrent cancel requests notify each participant only once 
+✔ FR-005b: cancelling an event with no participants succeeds with zero notifications 
+✔ FR-005b: a mail-provider failure doesn't fail the cancellation and is reported as failed 
+✔ FR-005b: a participant lookup failure doesn't fail the cancellation 
+✔ FR-005b: updating an event notifies participants with the changed details 
+✔ FR-005b: a renamed event's notification uses the new name and lists the old one 
+✔ FR-005b: an update with no participant-facing changes sends no EVENT_UPDATE notification 
+[notifications] failed to send event update email to amit.rao@test.com: Error: SMTP provider unavailable
+    at Mail.proto.sendMail (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/event-notifications.test.ts:188:11)
+    at sendMail (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/mailer.ts:62:34)
+    at async notifyEventParticipants (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:753:7)
+    at async notifyParticipantsSafely (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/app/api/events/[id]/route.ts:27:12)
+    at async PUT (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/app/api/events/[id]/route.ts:318:27)
+    at async <anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/event-notifications.test.ts:417:17)
+    at async withFailingMailProvider (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/event-notifications.test.ts:191:5)
+    at async TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/event-notifications.test.ts:416:3)
+    at async Test.run (node:internal/test_runner/test:1054:7)
+    at async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+[notifications] failed to send event update email to priya.nair@test.com: Error: SMTP provider unavailable
+    at Mail.proto.sendMail (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/event-notifications.test.ts:188:11)
+    at sendMail (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/mailer.ts:62:34)
+    at async notifyEventParticipants (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:753:7)
+    at async notifyParticipantsSafely (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/app/api/events/[id]/route.ts:27:12)
+    at async PUT (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/app/api/events/[id]/route.ts:318:27)
+    at async <anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/event-notifications.test.ts:417:17)
+    at async withFailingMailProvider (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/event-notifications.test.ts:191:5)
+    at async TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/event-notifications.test.ts:416:3)
+    at async Test.run (node:internal/test_runner/test:1054:7)
+    at async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+✔ FR-005b: repeating the same update doesn't notify participants twice 
+✔ FR-005b: failed or unauthorized updates notify nobody 
+✔ FR-005b: an update rejected for capacity below confirmed seats notifies nobody 
+✔ FR-005b: a mail-provider failure doesn't fail the update and is reported as failed 
+✔ FR-005b: an updated event with no participants succeeds with zero notifications 
+✔ FR-005b: notifyEventParticipants notifies a participant only once even with duplicate rows 
+✔ FR-005b: a participant without an email address is counted as failed, not sent 
+✔ FR-005b: diffEventDetails ignores capacity and treats equal dates as unchanged 
+✔ FR-005b: notification emails include the changes and escape HTML 
+✔ FR-005b: a participant promoted off the waitlist by a capacity-raising edit gets only the promotion email, not a second EVENT_UPDATE email 
+✔ FR-005b: an organizer holding their own event's registration is not notified of their own cancellation or edit 
+✔ FR-005b: fallback PATCH cancel and PUT edit return the same notifications shape as the DB path 
+✔ FR-006b: search by full event name 
+✔ FR-006b: search matches partial names, case-insensitively 
+✔ FR-006b: search returns only name matches, not venue/category/description matches 
+✔ FR-006b: search ignores leading and trailing spaces 
+✔ FR-006b: empty or whitespace-only search returns the default listing 
+✔ FR-006b: a search with no matches returns an empty list 
+✔ FR-006b: special characters are treated as plain text, not query syntax 
+✔ FR-006b: filter by category (exact, case-insensitive) 
+✔ FR-006b: filter by date returns only events on that day 
+✔ FR-006b: filter by venue (partial, case-insensitive) 
+✔ FR-006b: search and multiple filters combine (all must match) 
+✔ FR-006b: filters keep excluding cancelled events from the active listing 
+✔ FR-006b: filters combine with the organizer's own events tab 
+✔ FR-006b: clearing filters (no params) restores the full listing 
+✔ FR-006b: invalid or empty filter values are ignored instead of erroring 
+✔ FR-006b: filtered results keep the existing newest-first order and response fields 
+✔ FR-006b: search and filters also apply to the in-memory fallback when the DB is unavailable 
+✔ FR-006b: parseEventFilters trims, caps length, and drops invalid values 
+✔ FR-006b: buildEventFilterWhere produces parameterized Prisma conditions 
+✔ FR-006b: LIKE wildcards in search/filter input are escaped 
+✔ FR-006b: matchesEventFilters handles events with missing fields without throwing 
+[mailer] EMAIL_USER/EMAIL_PASS not set — using a disposable Ethereal test inbox. Sent mail will NOT reach a real address; a preview URL is logged for each send.
+[mailer] preview: https://ethereal.email/message/fake
+▶ lib/mailer.ts
+  ✔ uses Gmail SMTP when EMAIL_USER/EMAIL_PASS are set outside test env 
+  ✔ falls back to jsonTransport when EMAIL_USER is not set outside test env 
+  ✔ falls back to a disposable Ethereal inbox when EMAIL_USER is set without EMAIL_PASS 
+  ✔ reuses the same transporter promise across repeated sendMail calls 
+✔ lib/mailer.ts 
+[notifications] failed to send registration confirmation email to ann@example.com: Error: Simulated email provider outage
+    at Object.sendMail (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/register-for-event-edge-cases.test.ts:17:35)
+    at sendMail (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/mailer.ts:62:34)
+    at async sendRegistrationNotification (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:417:5)
+    at async registerForEvent (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:1273:7)
+    at async TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/register-for-event-edge-cases.test.ts:273:20)
+    at async Test.run (node:internal/test_runner/test:1054:7)
+    at async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+[registration] post-commit notification dispatch failed: Error: Simulated user lookup failure during notification dispatch
+    at Object.db.user.findUnique (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/register-for-event-edge-cases.test.ts:303:13)
+    at sendRegistrationNotification (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:367:28)
+    at Object.notifyBox.current (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:1245:35)
+    at registerForEvent (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:1273:23)
+    at async TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/register-for-event-edge-cases.test.ts:306:20)
+    at async Test.run (node:internal/test_runner/test:1054:7)
+    at async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+▶ lib/registration.ts: registerForEvent edge cases
+  ✔ re-registering while already waitlisted returns ALREADY_WAITLISTED_ERROR with a queue position 
+  ✔ falls back to findMany for the capacity check when registration.count is unavailable 
+  ✔ reactivates a previously-cancelled registration into WAITLISTED when rejoining a full event with waitlist: true 
+  ✔ returns a duplicate-registration conflict when the waitlist-join create hits a unique-constraint race 
+  ✔ also recognizes a non-Prisma error carrying a P2002 code as a duplicate-registration race on the waitlist-join path 
+  ✔ also recognizes a plain unique-constraint message as a duplicate-registration race on the waitlist-join path 
+  ✔ rethrows an unexpected error from the waitlist-join create 
+  ✔ returns a duplicate-registration conflict when the confirmed-registration create hits a unique-constraint race 
+  ✔ rethrows an unexpected error from the confirmed-registration create 
+  ✔ logs but does not fail the registration when the post-commit notification dispatch throws 
+  ✔ logs but does not fail the registration when the notification dispatch itself throws (not just the email send) 
+✔ lib/registration.ts: registerForEvent edge cases 
+[notifications] listener error: Error: Simulated listener crash
+    at <anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-notifications.test.ts:146:13)
+    at sendWaitlistPromotionNotification (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:329:13)
+    at TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-notifications.test.ts:149:28)
+    at Test.runInAsyncScope (node:async_hooks:214:14)
+    at Test.run (node:internal/test_runner/test:1047:25)
+    at Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+    at Test.postRun (node:internal/test_runner/test:1173:19)
+    at Test.run (node:internal/test_runner/test:1101:12)
+    at async Promise.all (index 0)
+    at async Suite.run (node:internal/test_runner/test:1442:7)
+[notifications] waitlist listener error: Error: Simulated waitlist listener crash
+    at <anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-notifications.test.ts:163:13)
+    at sendWaitlistPromotionNotification (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:337:13)
+    at TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-notifications.test.ts:166:28)
+    at Test.runInAsyncScope (node:async_hooks:214:14)
+    at Test.run (node:internal/test_runner/test:1047:25)
+    at Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+    at Test.postRun (node:internal/test_runner/test:1173:19)
+    at Test.run (node:internal/test_runner/test:1101:12)
+    at async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+[notifications] listener error: Error: Simulated listener crash
+    at <anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-notifications.test.ts:180:13)
+    at sendRegistrationNotification (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:407:13)
+    at TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-notifications.test.ts:184:15)
+    at Test.runInAsyncScope (node:async_hooks:214:14)
+    at Test.run (node:internal/test_runner/test:1047:25)
+    at Suite.processPendingSubtests (node:internal/test_runner/test:744:18)
+    at Test.postRun (node:internal/test_runner/test:1173:19)
+    at Test.run (node:internal/test_runner/test:1101:12)
+    at async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+[notifications] listener error: Error: Simulated listener crash
+    at <anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-notifications.test.ts:180:13)
+    at sendCancellationNotification (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:475:13)
+    at TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-notifications.test.ts:193:15)
+    at async Test.run (node:internal/test_runner/test:1054:7)
+    at async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+[notifications] listener error: Error: Simulated listener crash
+    at <anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-notifications.test.ts:180:13)
+    at sendEventReminderNotification (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:530:13)
+    at TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-notifications.test.ts:202:15)
+    at async Test.run (node:internal/test_runner/test:1054:7)
+    at async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+[notifications] failed to send waitlist promotion email to noah@example.com: Error: Simulated email provider outage
+    at Object.sendMail (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-notifications.test.ts:18:35)
+    at sendMail (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/mailer.ts:62:34)
+    at async sendWaitlistPromotionNotification (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:347:5)
+    at async TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-notifications.test.ts:218:7)
+    at async Test.run (node:internal/test_runner/test:1054:7)
+    at async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+[notifications] failed to send registration confirmation email to olive@example.com: Error: Simulated email provider outage
+    at Object.sendMail (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-notifications.test.ts:18:35)
+    at sendMail (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/mailer.ts:62:34)
+    at async sendRegistrationNotification (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:417:5)
+    at async TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-notifications.test.ts:227:7)
+    at async Test.run (node:internal/test_runner/test:1054:7)
+    at async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+[notifications] failed to send cancellation email to piper@example.com: Error: Simulated email provider outage
+    at Object.sendMail (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-notifications.test.ts:18:35)
+    at sendMail (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/mailer.ts:62:34)
+    at async sendCancellationNotification (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:485:5)
+    at async TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-notifications.test.ts:236:7)
+    at async Test.run (node:internal/test_runner/test:1054:7)
+    at async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+[notifications] failed to send event reminder email to quinn@example.com: Error: Simulated email provider outage
+    at Object.sendMail (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-notifications.test.ts:18:35)
+    at sendMail (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/mailer.ts:62:34)
+    at async sendEventReminderNotification (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:540:5)
+    at async TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-notifications.test.ts:245:7)
+    at async Test.run (node:internal/test_runner/test:1054:7)
+    at async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+▶ lib/registration.ts: notification db-lookup fallbacks
+  ✔ sendWaitlistPromotionNotification looks up user/event via a Prisma-like db when not inlined 
+  ✔ sendWaitlistPromotionNotification looks up user/event via Map-based test db when not inlined 
+  ✔ sendRegistrationNotification looks up user/event via a Prisma-like db when not inlined 
+  ✔ sendRegistrationNotification looks up user/event via Map-based test db when not inlined 
+  ✔ sendCancellationNotification looks up user/event via a Prisma-like db when not inlined 
+  ✔ sendCancellationNotification looks up user/event via Map-based test db when not inlined 
+  ✔ sendEventReminderNotification looks up user via a Prisma-like db when not inlined 
+  ✔ sendEventReminderNotification looks up user via Map-based test db when not inlined 
+✔ lib/registration.ts: notification db-lookup fallbacks 
+▶ lib/registration.ts: notification no-email / listener-error / send-failure branches
+  ✔ each notification function returns false and skips sending when the user has no email 
+  ✔ a throwing general listener does not stop sendWaitlistPromotionNotification from sending 
+  ✔ a throwing waitlist-specific listener does not stop sendWaitlistPromotionNotification from sending 
+  ✔ a throwing listener does not stop sendRegistrationNotification/sendCancellationNotification/sendEventReminderNotification from sending 
+  ✔ each notification function returns false and logs when the email provider fails 
+✔ lib/registration.ts: notification no-email / listener-error / send-failure branches 
+▶ lib/registration.ts: sendEventReminders fallback db shapes
+  ✔ falls back to Map scans for events, registrations and users when no Prisma-like namespaces exist 
+[reminders] failed to mark registration r2 as reminded: Error: Simulated failure marking reminder as sent
+    at Object.update (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-reminders-fallback.test.ts:78:17)
+    at sendEventReminders (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:938:37)
+    at async TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-reminders-fallback.test.ts:83:20)
+    at async Test.run (node:internal/test_runner/test:1054:7)
+    at async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ✔ falls back to a manual filter when the first db.event.findMany call throws, and logs when marking a reminder sent fails 
+✔ lib/registration.ts: sendEventReminders fallback db shapes 
+[registration] failed to compute waitlist position for user u1 on event evt_1: Error: Simulated query failure while computing waitlist position
+    at Object.db.registration.findMany (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-reporting.test.ts:133:13)
+    at calculateWaitlistPosition (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:969:40)
+    at <anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:2404:23)
+    at Array.map (<anonymous>)
+    at listRegistrations (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:2398:13)
+    at async TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration-reporting.test.ts:135:21)
+    at async Test.run (node:internal/test_runner/test:1054:7)
+    at async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+▶ lib/registration.ts: fallback db shapes not exercised by the Map-based mock
+  ✔ getWaitlistCount falls back to findMany when db.registration.count is unavailable 
+  ✔ getWaitlistCount returns 0 when neither count nor findMany is available 
+  ✔ getEventCapacity falls back to findMany for confirmedCount when count is unavailable 
+  ✔ getEventCapacity falls back to a Map scan for confirmedCount when no registration namespace exists 
+  ✔ getWaitlistPosition returns null when there is no registration at all 
+  ✔ getWaitlistPosition returns null when the registration is not waitlisted 
+  ✔ getWaitlistPosition falls back to a count-based estimate when findMany is unavailable 
+  ✔ getEventParticipantReport falls back to Map scans for registrations and user lookups 
+  ✔ listRegistrations falls back to a Map scan when db.registration.findMany is unavailable 
+  ✔ listRegistrations logs and continues when computing a waitlist position throws 
+✔ lib/registration.ts: fallback db shapes not exercised by the Map-based mock 
+✔ FR-007 / UT_01: Verify a valid registration creates a record with correct user, event, timestamp, and status 
+✔ FR-007 / UT_01: Verify registration via userEmail lookup creates correct record 
+✔ FR-007 / UT_02: Verify duplicate registration by the same user for the same event is rejected 
+✔ FR-007 / ST_02: Verify registering for a cancelled event is rejected 
+✔ FR-007 / ST_02: Verify registering for a non-existent event is rejected 
+✔ FR-007 / NFR-002: Concurrent duplicate registrations create exactly 1 record and reject all others (atomic race condition) 
+✔ FR-007: Multiple different users can register for the same event without interfering 
+✔ FR-007: Re-registering after self-cancellation reactivates registration to confirmed status 
+✔ FR-007: Validation & Access Control - Unauthenticated request is rejected with 401 
+✔ FR-007: Validation & Access Control - Suspended user is rejected with 403 
+✔ FR-007: Validation & Access Control - Non-existent user is rejected with 404 
+✔ FR-007: Validation & Access Control - Empty eventId is rejected with 400 
+✔ FR-007: checkUserRegistration helper returns accurate registration state 
+✔ FR-008 / UT_01: Verify registration is rejected when the event has zero available seats (Full Seminar) 
+✔ FR-008 / UT_02: Verify registration succeeds and decrements the seat count when a seat is available (Almost Full Talk) 
+✔ FR-008 / IT_01: Concurrency Control - Verify only one of two simultaneous requests for the last seat is confirmed 
+✔ FR-008 / IT_02: Concurrency Control - Verify seat capacity never goes negative under a simulated race condition 
+✔ FR-008 / ST_01: Load Test / Concurrency - Verify 100 concurrent requests for a 1-seat event yield exactly one confirmation 
+✔ FR-008: Overbooking Prevention - Verify event with capacity N accepts exactly N registrations and rejects all subsequent requests 
+✔ FR-008: Capacity check prevents re-registering cancelled registration if event became full 
+✔ FR-008: Duplicate check takes precedence over capacity check for already registered users 
+✔ FR-008: getEventCapacity helper returns accurate capacity, confirmedCount, remainingSeats, and isFull 
+✔ FR-009a / UT_01: Verify joining a waitlist records the user's position for a full event 
+✔ FR-009a / UT_02: Verify a participant can cancel their registration and free a seat 
+✔ FR-009a / IT_01: Verify a cancellation automatically promotes the first waitlisted user 
+✔ FR-009a / ST_01: End-to-End Waitlist Flow: Verify a waitlisted user is auto-promoted and notified when a seat frees up 
+✔ FR-009a / NFR-002: Waitlist entries are recorded in order joined (FIFO queue) 
+✔ FR-009a / NFR-002: Concurrent waitlist requests maintain data integrity and strict order without race conditions 
+✔ FR-009a: Duplicate check prevents already waitlisted user from joining waitlist again 
+✔ FR-009a: Confirmed user cannot join waitlist 
+✔ FR-009a: Re-joining waitlist after cancelling joins at the end of the queue 
+✔ FR-009a: Waitlisted user cancelling their own waitlist entry does not alter confirmed seat count or promote anyone 
+✔ FR-009a: Cannot join waitlist for a cancelled event 
+✔ FR-009a: Explicit joinWaitlist on an event with open seats returns error 
+✔ FR-009a: registerForEvent with waitlist: true joins waitlist when full, or registers confirmed when seats are open 
+✔ FR-009b / UT_02: Self-cancellation updates status to cancelled, increments seat count immediately, and dispatches cancellation email 
+✔ FR-009b / IT_02: Successful registration with open seats sends confirmation email immediately 
+✔ FR-009b / ST_02: Scheduled reminder job sends reminder notification to confirmed participants for events starting within 24h 
+✔ FR-009b: Reminder job ignores cancelled events and cancelled registrations 
+✔ FR-009b: Reminder job does not re-send to a registrant already reminded in a prior run 
+[notifications] listener error: Error: Simulated email server crash / connection refused
+    at <anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration.test.ts:1776:11)
+    at sendRegistrationNotification (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:407:13)
+    at async registerForEvent (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:1273:7)
+    at async TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration.test.ts:1781:17)
+    at async Test.run (node:internal/test_runner/test:1054:7)
+    at async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+✔ FR-009b: Waitlist cancellation dispatches cancellation confirmation to waitlisted user 
+✔ FR-009b: Self-cancellation is rejected when event is already cancelled 
+[notifications] listener error: Error: Simulated email server crash / connection refused
+    at <anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration.test.ts:1776:11)
+    at sendCancellationNotification (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:475:13)
+    at async cancelRegistration (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/lib/registration.ts:1746:9)
+    at async TestContext.<anonymous> (/tmp/claude-1000/-run-media-amogh-herle-DATA-PESU-SE-lab-EMS-repo/bc976210-34fc-46c5-87f8-dc02f7adfd76/scratchpad/headbuild/tests/registration.test.ts:1790:20)
+    at async Test.run (node:internal/test_runner/test:1054:7)
+    at async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+✔ FR-009b: Notification delivery failure does not prevent registration or cancellation (fault tolerance per UC-09) 
+✔ FR-009b: Email templates generate valid HTML and escape dangerous characters 
+✔ FR-009b: listRegistrations returns active and waitlisted entries with calculated queue positions and event details 
+✔ FR-010a / UT_01: Verify the displayed registered-participant count matches actual active registrations 
+✔ FR-010a / UT_02: Verify the displayed available-seat count equals capacity minus active registrations 
+✔ FR-010a / IT_01: Verify the exported CSV participant list matches the on-screen registrant list 
+✔ FR-010a / IT_02: Verify the exported PDF participant list matches the on-screen registrant list 
+✔ FR-010a / ST_02: Verify an organizer can view accurate event-wise registration info across multiple events 
+✔ FR-010a / NFR-001: Performance - Generate CSV and PDF exports of 5,000 registrations within 10 seconds 
+✔ FR-010a: getEventParticipantReport sorts confirmed first, then waitlist with queue position, then cancelled 
+✔ FR-010a: Edge Case - Event with 0 registrants exports clean empty roster without errors 
+✔ FR-010a: CSV export neutralizes formula-injection payloads in participant-controlled fields 
+✔ FR-010a: PDF export renders accented Latin-1 names instead of replacing them with '?' 
+▶ lib/session.ts
+  ✔ getSecret throws when SESSION_SECRET is not set 
+  ✔ createSessionValue + verifySessionValue round-trip for a valid cookie 
+  ✔ verifySessionValue rejects a cookie with the wrong number of segments 
+  ✔ verifySessionValue rejects a tampered signature 
+  ✔ verifySessionValue rejects a signature of the wrong length 
+  ✔ verifySessionValue rejects an expired session 
+  ✔ readSessionCookie extracts the session value from a cookie header 
+  ✔ readSessionCookie returns null when there is no session cookie 
+  ✔ readSessionCookie returns null when there is no cookie header at all 
+  ✔ sessionCookieHeader omits Secure outside production 
+  ✔ sessionCookieHeader appends Secure in production 
+  ✔ clearSessionCookieHeader omits Secure outside production 
+  ✔ clearSessionCookieHeader appends Secure in production 
+✔ lib/session.ts 
+▶ lib/validation.ts: createEventSchema capacity rules
+  ✔ rejects a missing capacity 
+  ✔ rejects an empty-string capacity the same as missing 
+  ✔ rejects a non-numeric capacity 
+  ✔ rejects a non-integer capacity 
+  ✔ rejects a zero or negative capacity 
+  ✔ rejects a capacity above the 100,000 Postgres-int-safe bound 
+  ✔ accepts capacity exactly at the 100,000 bound 
+  ✔ accepts a valid numeric-string capacity and transforms it to a number 
+  ✔ rejects a date that doesn't parse 
+✔ lib/validation.ts: createEventSchema capacity rules 
+▶ lib/validation.ts: registerEventSchema
+  ✔ accepts a bare eventId with waitlist omitted 
+  ✔ accepts an explicit waitlist flag 
+  ✔ rejects a missing or empty eventId 
+✔ lib/validation.ts: registerEventSchema 
+ℹ tests 270
+ℹ suites 10
+ℹ pass 270
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 931.045021

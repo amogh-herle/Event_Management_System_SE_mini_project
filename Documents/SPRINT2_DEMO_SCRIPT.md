@@ -45,4 +45,4 @@ Before recording: seed the database with a couple of events, at least one with 2
 ## Notes for whoever edits the recording
 - If timing runs long, cut the category-management beat (0:35–0:55) first — it's the least load-bearing for grading, since FR-006c's acceptance criteria are already covered by automated tests.
 - Keep the "participants will be notified by email" line in the cancel-confirmation modal on screen for a beat — it's a visible, gradable proof point for FR-005b, not just the email itself.
-- No need to narrate error cases (invalid capacity, duplicate registration, etc.) — those were covered in Sprint 1 and are exercised by the automated test suite (193 passing), not something the video needs to prove.
+- No need to narrate error cases (invalid capacity, duplicate registration, etc.) — those were covered in Sprint 1 and are exercised by the automated test suite (270 passing), not something the video needs to prove.
