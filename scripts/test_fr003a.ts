@@ -66,6 +66,9 @@ async function makeUser(opts: {
   password: string;
   role: "ORGANIZER" | "PARTICIPANT" | "ADMIN";
 }) {
+  // Remove events this user organised on a previous run first — Event has a
+  // non-cascading FK to User, so a re-run would otherwise fail on cleanup.
+  await prisma.event.deleteMany({ where: { organizer: { email: opts.email } } });
   await prisma.user.deleteMany({ where: { email: opts.email } });
   const passwordHash = await bcrypt.hash(opts.password, 10);
   return prisma.user.create({
