@@ -1,4 +1,4 @@
-# Project checklist — status as of 13 Nov 2026
+# Project checklist — status as of 16 Nov 2026
 
 Legend: **[x]** done and verified · **[~]** done with a caveat · **[ ]** not done / needs the team or repo owner.
 Verified against `origin/main` (up to date with local `main`) plus the local working tree.
@@ -54,7 +54,7 @@ Verified against `origin/main` (up to date with local `main`) plus the local wor
 - [~] All tests executed per plan: everything that can run locally was run on 13 Nov. **Not executed:** usability study (needs people), TLS/encryption audit (hosting), monthly uptime, Safari/Edge. See Test Plan §14.
 - [x] Generated reports in `docs/reports/`: `test-run.txt`, `coverage-report.txt`, `live-api-test-run.txt`, `fault-injection/` (fail → fix demonstration)
 
-Results: 270/270 automated pass, 74/74 live checks pass, coverage 92.29%. **Failures reported honestly:** NFT_02 (latency at 500 users), SEC_03, SEC_10, SEC_11, SEC_13, NFT_10, NFT_11; partials: SEC_09, NFT_06, NFT_07, NFT_08.
+Results: 319/319 automated pass, 74/74 live checks pass, line coverage 96.35% (core modules 93.40%, CI-gated at 80%). **Not met or not run:** NFT_02 (latency at 500 concurrent users), NFT_08 usability study, NFT_07 daily backup/uptime monitoring, SEC_06 (TLS/at-rest, project runs locally). NFR-004, NFR-006 and NFR-007 work was merged in PRs #63, #64, #65.
 
 ## Part 4 — Final evaluation (team to do at the demo)
 
