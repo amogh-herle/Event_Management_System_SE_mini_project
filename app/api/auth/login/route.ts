@@ -3,6 +3,8 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { loginSchema } from "@/lib/validation";
 import { sessionCookieHeader } from "@/lib/session";
+import { logEvent } from "@/lib/auditLog";
+import { ACCOUNT_LOCKED_ERROR, MAX_FAILED_LOGIN_ATTEMPTS, isLocked, nextFailureState } from "@/lib/loginLockout";
 
 const INVALID_CREDENTIALS = "Invalid email or password";
 
@@ -32,8 +34,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: INVALID_CREDENTIALS }, { status: 401 });
   }
 
+  if (isLocked(user.lockedUntil)) {
+    return NextResponse.json({ error: ACCOUNT_LOCKED_ERROR }, { status: 423 });
+  }
+
   const passwordOk = await bcrypt.compare(password, user.passwordHash);
   if (!passwordOk) {
+    const state = nextFailureState(user.failedLoginAttempts);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { failedLoginAttempts: state.failedLoginAttempts, lockedUntil: state.lockedUntil },
+    });
+    if (state.locked) {
+      await logEvent({
+        severity: "WARN",
+        action: "account.locked",
+        actorId: user.id,
+        actorRole: user.role,
+        details: `Locked after ${MAX_FAILED_LOGIN_ATTEMPTS} consecutive failed login attempts`,
+      });
+      return NextResponse.json({ error: ACCOUNT_LOCKED_ERROR }, { status: 423 });
+    }
     return NextResponse.json({ error: INVALID_CREDENTIALS }, { status: 401 });
   }
 
@@ -46,6 +67,13 @@ export async function POST(request: Request) {
       { error: "Please verify your email before logging in" },
       { status: 403 }
     );
+  }
+
+  if (user.failedLoginAttempts > 0 || user.lockedUntil) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { failedLoginAttempts: 0, lockedUntil: null },
+    });
   }
 
   const response = NextResponse.json({

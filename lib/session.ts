@@ -1,7 +1,9 @@
 import crypto from "crypto";
 
 const SESSION_COOKIE = "session";
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+// NFR-004 / SRSec 2.2: 30-minute idle timeout. middleware.ts re-issues the
+// cookie on each request, so the window slides with activity.
+const SESSION_TTL_MS = 30 * 60 * 1000;
 
 function getSecret(): string {
   const secret = process.env.SESSION_SECRET;

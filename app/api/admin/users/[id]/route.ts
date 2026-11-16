@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth";
+import { logEvent } from "@/lib/auditLog";
 
 const patchSchema = z.object({
   action: z.enum(["suspend", "unsuspend"]),
@@ -60,6 +61,14 @@ export async function PATCH(
     },
   });
 
+  await logEvent({
+    severity: "INFO",
+    action: parsed.data.action === "suspend" ? "user.suspended" : "user.unsuspended",
+    actorId: auth.user.id,
+    actorRole: auth.user.role,
+    details: `target=${params.id}`,
+  });
+
   return NextResponse.json({ user: updated });
 }
 
@@ -103,6 +112,14 @@ export async function DELETE(
   }
 
   await prisma.user.delete({ where: { id: params.id } });
+
+  await logEvent({
+    severity: "WARN",
+    action: "user.deleted",
+    actorId: auth.user.id,
+    actorRole: auth.user.role,
+    details: `target=${params.id} email=${target.email}`,
+  });
 
   return new NextResponse(null, { status: 204 });
 }

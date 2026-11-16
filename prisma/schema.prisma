@@ -25,18 +25,21 @@ enum RegistrationStatus {
 }
 
 model User {
-  id                  String               @id @default(cuid())
-  name                String
-  email               String               @unique
-  passwordHash        String
-  role                Role                 @default(PARTICIPANT)
-  verified            Boolean              @default(false)
-  suspended           Boolean              @default(false)
-  createdAt           DateTime             @default(now())
-  verificationTokens  VerificationToken[]
-  passwordResetTokens PasswordResetToken[]
-  events              Event[]
-  registrations       Registration[]
+  id                   String               @id @default(cuid())
+  name                 String
+  email                String               @unique
+  passwordHash         String
+  role                 Role                 @default(PARTICIPANT)
+  verified             Boolean              @default(false)
+  suspended            Boolean              @default(false)
+  // NFR-004 / SRSec 2.3: account lockout after repeated failed logins.
+  failedLoginAttempts  Int                  @default(0)
+  lockedUntil          DateTime?
+  createdAt            DateTime             @default(now())
+  verificationTokens   VerificationToken[]
+  passwordResetTokens  PasswordResetToken[]
+  events               Event[]
+  registrations        Registration[]
 }
 
 model VerificationToken {
@@ -61,6 +64,27 @@ model PasswordResetToken {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+enum LogSeverity {
+  INFO
+  WARN
+  ERROR
+}
+
+// NFR-004 (admin action audit trail) and NFR-007 (central error logging)
+// share one durable, queryable log — SRSec 6.1/6.2.
+model AuditLog {
+  id        String      @id @default(cuid())
+  severity  LogSeverity
+  action    String
+  actorId   String?
+  actorRole Role?
+  details   String?
+  createdAt DateTime    @default(now())
+
+  @@index([createdAt])
+  @@index([actorId])
 }
 
 model Category {
