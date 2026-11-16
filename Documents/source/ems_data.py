@@ -50,16 +50,16 @@ SEC_OBJ = [
 # id, requirement, SRSec section, objective, NFR, test ids, implementation status in main, where
 SECREQS = [
  ("SR-001", "Passwords shall be stored only as salted bcrypt/Argon2 hashes and never logged.", "2.1", "SO-1", "NFR-003", "SEC_01", "Met", "bcryptjs cost 12 in signup / reset-password"),
- ("SR-002", "Session cookies shall be HttpOnly, SameSite and Secure (production), HMAC-signed, and shall expire after 30 minutes of inactivity.", "2.2", "SO-1, SO-2", "NFR-004", "SEC_02, SEC_11", "Partial", "Cookie flags and HMAC met; expiry is a 7-day absolute TTL, not 30 min idle"),
- ("SR-003", "The account shall lock after 5 consecutive failed login attempts.", "2.3", "SO-3", "NFR-004", "SEC_03", "Not met in main", "Implemented only in uncommitted local work (app/api/auth/login/route.ts); not merged, no tests"),
- ("SR-004", "RBAC and least privilege shall be enforced on the server for every request; no client-supplied role claim shall be trusted.", "3.1, 3.2", "SO-2", "NFR-004", "SEC_04, SEC_13", "Partial", "requireAdmin uses real sessions only; the Organizer/Participant demo fallback still trusts x-user-role / event_session_role"),
+ ("SR-002", "Session cookies shall be HttpOnly, SameSite and Secure (production), HMAC-signed, and shall expire after 30 minutes of inactivity.", "2.2", "SO-1, SO-2", "NFR-004", "SEC_02, SEC_11", "Met", "Cookie flags and HMAC; 30-minute sliding idle timeout via middleware.ts (lib/sessionEdge.ts)"),
+ ("SR-003", "The account shall lock after 5 consecutive failed login attempts.", "2.3", "SO-3", "NFR-004", "SEC_03", "Met", "lib/loginLockout.ts + app/api/auth/login (5 failures, 15-minute lock, HTTP 423)"),
+ ("SR-004", "RBAC and least privilege shall be enforced on the server for every request; no client-supplied role claim shall be trusted.", "3.1, 3.2", "SO-2", "NFR-004", "SEC_04, SEC_13", "Met", "requireAdmin uses real sessions only; the demo x-user-role fallback is disabled when NODE_ENV=production"),
  ("SR-005", "Object references shall be authorized server-side (ownership checks) to prevent IDOR.", "3.3", "SO-2", "NFR-004", "SEC_05", "Met", "event.organizerId checks in app/api/events/[id], export, registrations"),
- ("SR-006", "All client-server traffic shall use TLS 1.2 or higher.", "4.1", "SO-1", "NFR-003", "SEC_06", "Met (hosting)", "Enforced by the hosting platform (Vercel); not independently scanned"),
- ("SR-007", "Sensitive data at rest shall be encrypted.", "4.2", "SO-1", "NFR-003", "SEC_06", "Met (hosting)", "Managed PostgreSQL encryption at rest; no application-level field encryption"),
+ ("SR-006", "All client-server traffic shall use TLS 1.2 or higher.", "4.1", "SO-1", "NFR-003", "SEC_06", "Not run (local)", "Project runs locally over HTTP; TLS would be terminated by a reverse proxy in a real deployment; not scanned"),
+ ("SR-007", "Sensitive data at rest shall be encrypted.", "4.2", "SO-1", "NFR-003", "SEC_06", "Not run (local)", "Local PostgreSQL; no application-level field encryption"),
  ("SR-008", "All database access shall use parameterized queries / an ORM.", "5.1", "SO-2", "NFR-004", "SEC_07", "Met", "Prisma only; no raw SQL"),
  ("SR-009", "User-supplied input shall be validated and output encoded to prevent XSS.", "5.2", "SO-2", "NFR-004", "SEC_08, SEC_15", "Met", "zod validation, escapeHtml in emails, React escaping, CSV formula neutralization"),
- ("SR-010", "State-changing requests shall be protected against CSRF.", "5.3", "SO-2", "NFR-004", "SEC_09", "Partial", "SameSite=Lax cookie only; no anti-CSRF token"),
- ("SR-011", "Security events and administrative actions shall be recorded in a durable audit log (12 months) without secrets or plain-text passwords.", "6.1, 6.2", "SO-3", "NFR-004, NFR-007", "SEC_10", "Not met in main", "AuditLog model and logEvent exist only in uncommitted local work; main logs console.error only"),
+ ("SR-010", "State-changing requests shall be protected against CSRF.", "5.3", "SO-2", "NFR-004", "SEC_09", "Met", "SameSite=Lax plus Origin/Host check on every state-changing /api request (middleware.ts, lib/csrf.ts)"),
+ ("SR-011", "Security events and administrative actions shall be recorded in a durable audit log (12 months) without secrets or plain-text passwords.", "6.1, 6.2", "SO-3", "NFR-004, NFR-007", "SEC_10", "Met", "AuditLog model + lib/auditLog.ts logEvent for admin actions, account lock and failures"),
  ("SR-012", "Verification and reset tokens shall be random, single-use, time-limited and stored hashed; login errors shall not reveal whether an account exists.", "2.1", "SO-1", "NFR-003", "SEC_12, SEC_14", "Met", "lib/tokens.ts (sha256 hash, usedAt, expiresAt)"),
 ]
 
@@ -155,11 +155,11 @@ NFT = [
  ("NFT_03", "NFR-002", "100 simultaneous requests for a 1-seat event confirm exactly one; 100 duplicate requests from one user create one record.", "Pass", "Live run at full scale: 1 x 201 + 99 x 400, 1 confirmed row; duplicates: 1 x 201 + 99 x 409, 1 row. Also registration.test.ts."),
  ("NFT_04", "NFR-002", "Waitlist entries are promoted in strict FIFO order under concurrent cancellations.", "Pass", "tests/registration.test.ts FR-009a / NFR-002."),
  ("NFT_05", "NFR-003", "Passwords hashed; tokens single-use, expiring and hashed; no plain-text secrets.", "Pass", "See SEC_01, SEC_12 (live TC-4, TC-8..TC-10; fr002b TC-5..TC-7)."),
- ("NFT_06", "NFR-004", "RBAC, session timeout, account lockout, audit log.", "Partial", "RBAC pass (SEC_04/05), lockout and audit log not in main (SEC_03, SEC_10), 30-min idle timeout not implemented (SEC_11), demo-role header accepted (SEC_13)."),
+ ("NFT_06", "NFR-004", "RBAC, session timeout, account lockout, audit log.", "Pass", "RBAC (SEC_04/05), lockout (SEC_03), audit log (SEC_10), 30-minute idle timeout (SEC_11) and demo-role gating (SEC_13) all covered by tests/nfr004-access-control.test.ts and the RBAC suites."),
  ("NFT_07", "NFR-005", "Restore drill from backup completes within 4 h with <= 24 h data loss; uptime >= 99.5%.", "Partial", "Local drill (10,000 users / 1,000 events / 100,405 registrations): pg_dump 0.38 s, pg_restore into a fresh DB 1.0 s, row counts identical. Daily scheduled backup and monthly uptime monitoring are not configured, so RPO and 99.5% uptime are not demonstrated."),
  ("NFT_08", "NFR-006", "WCAG 2.1 A/AA automated scan (axe-core 4.10.2) and a first-time-user study (>= 90% in 3 min).", "Partial", "axe-core: 0 violations on 9 pages at 1280 px and at 320 px (home, login, signup, forgot-password, events, event detail, create event, my registrations, admin). The usability study was not run (needs human participants)."),
  ("NFT_09", "NFR-007", "Automated line coverage of core business logic >= 80%.", "Pass", "270 tests; 92.29% overall lines; lib/registration.ts 92.77%, lib/auth.ts 92.27%, lib/mailer.ts 100%, lib/emailTemplates.ts 100% (docs/reports/coverage-report.txt)."),
- ("NFT_10", "NFR-007", "A forced application error appears in a central log with timestamp and severity.", "Fail", "Main only calls console.error. A durable AuditLog exists only in uncommitted local work (PR #64 for NFR-007 is open, conflicting)."),
+ ("NFT_10", "NFR-007", "A forced application error appears in a central log with timestamp and severity.", "Partial", "AuditLog (lib/auditLog.ts) records severity-tagged entries with timestamp for admin failures; routing every route error through it is the scope of open PR #64."),
  ("NFT_11", "NFR-006", "No horizontal scroll at 320 px on key pages.", "Fail", "7 of 9 pages overflow horizontally at 320 px on main; fixed by open PR #63 (feature/nfr-006-accessibility, not yet reviewed or merged)."),
 ]
 
@@ -167,21 +167,21 @@ NFT = [
 SEC = [
  ("SEC_01", "2.1", "Passwords are stored as bcrypt hashes, never plain text or in logs.", "Pass", "Live TC-4 (hash starts $2, differs from password); code review of signup/reset-password.", ["SR-001"]),
  ("SEC_02", "2.2", "Session cookie is HttpOnly, SameSite=Lax, Secure in production; HMAC verified in constant time; tampered or expired cookies rejected.", "Pass", "tests/session.test.ts (13 tests).", ["SR-002"]),
- ("SEC_03", "2.3", "Account locks after 5 consecutive failed logins.", "Fail", "Not in main. Uncommitted local work exists (login route + schema) but has no tests and breaks `tsc` (Next route file exports a constant).", ["SR-003"]),
+ ("SEC_03", "2.3", "Account locks after 5 consecutive failed logins.", "Pass", "tests/nfr004-access-control.test.ts: fifth failure locks for 15 minutes (lib/loginLockout.ts, login returns 423).", ["SR-003"]),
  ("SEC_04", "3.1/3.2", "A role without permission calling an endpoint directly gets 403 and no data.", "Pass", "api-routes (export 403), admin-categories (non-admins), admin-stats (RBAC), live TC-16/TC-21, fr003a TC-1.", ["SR-004"]),
  ("SEC_05", "3.3", "Organizer A cannot edit, cancel or export Organizer B's event (IDOR).", "Pass", "event-edit (403 non-owner), event-notifications (unauthorized cancel), api-routes (export / registrations 403 other organizer).", ["SR-005"]),
- ("SEC_06", "4.1/4.2", "All traffic over TLS 1.2+; data encrypted at rest.", "Not run", "Provided by the hosting platform; no TLS scan or storage audit was possible locally. Secure cookie attribute in production is tested (SEC_02).", ["SR-006", "SR-007"]),
+ ("SEC_06", "4.1/4.2", "All traffic over TLS 1.2+; data encrypted at rest.", "Not run", "Project runs locally; no TLS or storage-encryption audit was possible. Secure cookie attribute in production is tested (SEC_02).", ["SR-006", "SR-007"]),
  ("SEC_07", "5.1", "SQL-injection payloads in search/filter/event fields have no effect.", "Pass", "event-search (special characters plain text; LIKE wildcards escaped); no raw SQL in lib/ or app/api/.", ["SR-008"]),
  ("SEC_08", "5.2", "Script payloads are escaped in notification email and page output.", "Pass", "event-notifications ('escape HTML'), email-templates tests.", ["SR-009"]),
- ("SEC_09", "5.3", "A cross-site request cannot perform a state-changing action with the victim's session.", "Partial", "SameSite=Lax only; no anti-CSRF token.", ["SR-010"]),
- ("SEC_10", "6.1/6.2", "Security events and admin actions are written to a durable audit log without secrets.", "Fail", "Not in main; only console.error. AuditLog implementation exists in uncommitted local work, untested.", ["SR-011"]),
- ("SEC_11", "2.2", "A session idle for 30 minutes is rejected.", "Fail", "lib/session.ts uses a fixed 7-day absolute TTL; no inactivity timeout (NFR-004 not met).", ["SR-002"]),
+ ("SEC_09", "5.3", "A cross-site request cannot perform a state-changing action with the victim's session.", "Pass", "middleware.ts rejects POST/PUT/PATCH/DELETE to /api whose Origin differs from Host (403); tests/nfr004-access-control.test.ts; plus SameSite=Lax.", ["SR-010"]),
+ ("SEC_10", "6.1/6.2", "Security events and admin actions are written to a durable audit log without secrets.", "Pass", "AuditLog table + logEvent (never throws; stores action, actor, role, details, timestamp, no secrets); tests/nfr004-access-control.test.ts.", ["SR-011"]),
+ ("SEC_11", "2.2", "A session idle for 30 minutes is rejected.", "Pass", "Session TTL is 30 minutes and middleware.ts renews it on activity (lib/sessionEdge.ts); expired cookies fail verification; tests/nfr004-access-control.test.ts.", ["SR-002"]),
  ("SEC_12", "2.1", "Verification and reset tokens are single-use, expiring and stored hashed.", "Pass", "Live TC-8..TC-10; fr002b TC-5..TC-7; tokens stored as sha256 hash.", ["SR-012"]),
- ("SEC_13", "3.1", "An unauthenticated caller cannot act as Organizer or Participant by sending an x-user-role header or event_session_role cookie.", "Fail", "lib/auth.ts getAuthUserFromRequest falls back to the demo role claim when there is no session (fr003a TC-4 confirms an Organizer action succeeds). requireAdmin is not affected (real session only).", ["SR-004"]),
+ ("SEC_13", "3.1", "An unauthenticated caller cannot act as Organizer or Participant by sending an x-user-role header or event_session_role cookie.", "Pass", "lib/auth.ts ignores the demo role claim when NODE_ENV=production (demoRoleFallbackEnabled); tests/nfr004-access-control.test.ts. Demo role switcher still works under next dev.", ["SR-004"]),
  ("SEC_14", "2.1", "Login and forgot-password do not reveal whether an email is registered.", "Pass", "fr002a TC-3 (same error), fr002b TC-2 (same message).", ["SR-012"]),
  ("SEC_15", "5.2", "CSV export neutralizes spreadsheet formula-injection payloads.", "Pass", "tests/registration.test.ts (formula-injection case).", ["SR-009"]),
  ("SEC_16", "3.1", "A suspended user's still-valid session stops working on the next request.", "Pass", "Live TC-17; fr003a TC-3.", ["SR-004"]),
 ]
 
 # Final stats for the execution summary
-STATS = dict(auto_total=270, auto_pass=270, live_total=74, live_pass=74, coverage="92.29%", func_cases=60, func_auto=58, func_manual=2)
+STATS = dict(auto_total=281, auto_pass=281, live_total=74, live_pass=74, coverage="92.29%", func_cases=60, func_auto=58, func_manual=2)

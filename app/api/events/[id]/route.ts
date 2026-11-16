@@ -16,6 +16,7 @@ import {
   type NotifyEventParticipantsResult,
 } from "@/lib/registration";
 import { isEventDatePast } from "@/lib/eventDates";
+import { logEvent } from "@/lib/auditLog";
 
 // FR-005b: the event change has already been committed when this runs, so
 // a notification failure must never surface as an error response (or fall
@@ -161,6 +162,14 @@ export async function PATCH(
     const notifications = await notifyParticipantsSafely({
       kind: "CANCELLATION",
       event: updated,
+    });
+
+    await logEvent({
+      severity: "INFO",
+      action: "event.cancelled",
+      actorId: auth.user.id,
+      actorRole: auth.user.role,
+      details: `event=${updated.id}`,
     });
 
     return NextResponse.json({
