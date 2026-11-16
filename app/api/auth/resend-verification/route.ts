@@ -5,6 +5,7 @@ import { createVerificationToken } from "@/lib/tokens";
 import { sendMail } from "@/lib/mailer";
 import { verificationEmail } from "@/lib/emailTemplates";
 import { getPublicOrigin } from "@/lib/url";
+import { logger } from "@/lib/logger";
 
 const bodySchema = z.object({ email: z.string().trim().toLowerCase().email() });
 
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
       const { subject, html } = verificationEmail(user.name, verifyUrl);
       await sendMail(user.email, subject, html);
     } catch (mailErr) {
-      console.error("[resend-verification] failed to send email:", mailErr);
+      logger.error("resend-verification", "failed to send email", mailErr);
     }
   }
 

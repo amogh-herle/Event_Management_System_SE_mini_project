@@ -1,4 +1,5 @@
 import nodemailer, { type Transporter } from "nodemailer";
+import { logger } from "@/lib/logger";
 
 let transporterPromise: Promise<Transporter> | null = null;
 
@@ -42,8 +43,9 @@ function getTransporter(): Promise<Transporter> {
     }
 
     const testAccount = await nodemailer.createTestAccount();
-    console.warn(
-      "[mailer] EMAIL_USER/EMAIL_PASS not set — using a disposable Ethereal test inbox. " +
+    logger.warn(
+      "mailer",
+      "EMAIL_USER/EMAIL_PASS not set - using a disposable Ethereal test inbox. " +
         "Sent mail will NOT reach a real address; a preview URL is logged for each send."
     );
     return nodemailer.createTransport({
@@ -57,6 +59,11 @@ function getTransporter(): Promise<Transporter> {
   return transporterPromise;
 }
 
+/** Test hook: forget the cached transport so the next send re-reads the env. */
+export function resetMailTransportForTests(): void {
+  transporterPromise = null;
+}
+
 export async function sendMail(to: string, subject: string, html: string) {
   const transporter = await getTransporter();
   const info = await transporter.sendMail({
@@ -68,7 +75,7 @@ export async function sendMail(to: string, subject: string, html: string) {
 
   const previewUrl = nodemailer.getTestMessageUrl(info);
   if (previewUrl) {
-    console.log(`[mailer] preview: ${previewUrl}`);
+    logger.info("mailer", "preview URL for sent email", { previewUrl });
   }
 
   return info;

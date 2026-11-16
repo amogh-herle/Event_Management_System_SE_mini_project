@@ -65,6 +65,17 @@ Unit tests (mocked DB, no Postgres needed):
 npm test
 ```
 
+Coverage (NFR-007): CI fails the build if any core business-logic module (registration, capacity check, waitlist promotion, notifications, and the central logger) drops below 80% line coverage. To run the same check locally:
+
+```bash
+npm run test:coverage
+npm run coverage:check
+```
+
+### Application logs (NFR-007)
+
+All server-side errors go through the central logger in `lib/logger.ts`. Each entry is one JSON line with a `timestamp`, `severity` (`DEBUG`/`INFO`/`WARN`/`ERROR`), `source`, `message`, and the error's name, message and stack. Entries appear in the `npm run dev` terminal locally and in the project's Runtime Logs on Vercel. Set `LOG_FILE=logs/app.log` in `.env` to also keep them in a file, and `LOG_LEVEL` to change the minimum severity.
+
 Live integration scripts under `scripts/` exercise the real API against a running dev server and a real Postgres (steps 2–5 above must already be done, and `npm run dev` running in another terminal). Each needs `DATABASE_URL` and `SESSION_SECRET` in its shell environment and takes an optional `BASE_URL` (defaults to `http://localhost:3000`):
 
 ```bash

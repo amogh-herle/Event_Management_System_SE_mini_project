@@ -12,6 +12,7 @@ import {
   parseCategoryBody,
   toAdminCategory,
 } from "@/lib/categories";
+import { logger } from "@/lib/logger";
 import { logEvent } from "@/lib/auditLog";
 
 // PATCH /api/admin/categories/[id] — FR-006c: admin renames a category.
@@ -66,7 +67,7 @@ export async function PATCH(
     if (isNotFound(err)) {
       return NextResponse.json({ error: "Category not found" }, { status: 404 });
     }
-    console.error("[admin/categories/:id] failed to rename category:", err);
+    logger.error("admin/categories/:id", "failed to rename category", err);
     await logEvent({
       severity: "ERROR",
       action: "admin.categories.rename.failed",
@@ -132,7 +133,7 @@ export async function DELETE(
     if (isNotFound(err)) {
       return NextResponse.json({ error: "Category not found" }, { status: 404 });
     }
-    console.error("[admin/categories/:id] failed to delete category:", err);
+    logger.error("admin/categories/:id", "failed to delete category", err);
     await logEvent({
       severity: "ERROR",
       action: "admin.categories.delete.failed",

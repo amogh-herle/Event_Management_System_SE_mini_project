@@ -1165,3 +1165,78 @@ test("API: GET /api/registrations?eventId=...&format=pdf returns PDF export", as
   const buf = Buffer.from(await res.arrayBuffer());
   assert.ok(buf.toString("latin1").startsWith("%PDF-1.4"));
 });
+
+// NFR-007: waitlist promotion is core business logic, so every handler and
+// error path of /api/events/[id]/waitlist is covered.
+
+function waitlistRequest(method: string, userId?: string) {
+  return new Request("http://localhost:3000/api/events/evt_full/waitlist", {
+    method,
+    headers: userId ? sessionCookieFor(userId) : {},
+  });
+}
+
+test("API: POST /api/events/[id]/waitlist returns 401 when no session is present", async () => {
+  const res = await waitlistRoutePost(waitlistRequest("POST"), { params: { id: "evt_full" } });
+  assert.equal(res.status, 401);
+  assert.equal((await res.json()).error, AUTH_REQUIRED_ERROR);
+});
+
+test("API: POST /api/events/[id]/waitlist is rejected while the event still has seats", async () => {
+  const res = await waitlistRoutePost(
+    new Request("http://localhost:3000/api/events/evt1/waitlist", {
+      method: "POST",
+      headers: sessionCookieFor("u1"),
+    }),
+    { params: { id: "evt1" } }
+  );
+  assert.equal(res.status, 400);
+  assert.match((await res.json()).error, /waitlist is only available when capacity is reached/);
+});
+
+test("API: POST /api/events/[id]/waitlist returns 409 when the user is already waitlisted", async () => {
+  await waitlistRoutePost(waitlistRequest("POST", "u1"), { params: { id: "evt_full" } });
+  const res = await waitlistRoutePost(waitlistRequest("POST", "u1"), { params: { id: "evt_full" } });
+  assert.equal(res.status, 409);
+  const data = await res.json();
+  assert.equal(data.error, ALREADY_WAITLISTED_ERROR);
+  assert.equal(data.waitlistPosition, 1);
+});
+
+test("API: GET /api/events/[id]/waitlist returns 401 when no session is present", async () => {
+  const res = await waitlistRouteGet(waitlistRequest("GET"), { params: { id: "evt_full" } });
+  assert.equal(res.status, 401);
+});
+
+test("API: GET /api/events/[id]/waitlist reports the session user's waitlist position", async () => {
+  await waitlistRoutePost(waitlistRequest("POST", "u1"), { params: { id: "evt_full" } });
+  const res = await waitlistRouteGet(waitlistRequest("GET", "u1"), { params: { id: "evt_full" } });
+  assert.equal(res.status, 200);
+  const data = await res.json();
+  assert.equal(data.isWaitlisted, true);
+  assert.equal(data.waitlistPosition, 1);
+});
+
+test("API: DELETE /api/events/[id]/waitlist returns 401 when no session is present", async () => {
+  const res = await waitlistRouteDelete(waitlistRequest("DELETE"), { params: { id: "evt_full" } });
+  assert.equal(res.status, 401);
+});
+
+test("API: DELETE /api/events/[id]/waitlist leaves the waitlist", async () => {
+  await waitlistRoutePost(waitlistRequest("POST", "u1"), { params: { id: "evt_full" } });
+  const res = await waitlistRouteDelete(waitlistRequest("DELETE", "u1"), { params: { id: "evt_full" } });
+  assert.equal(res.status, 200);
+  const data = await res.json();
+  assert.equal(data.success, true);
+  assert.equal(typeof data.message, "string");
+  assert.equal(data.registration.status, "cancelled");
+
+  const after = await waitlistRouteGet(waitlistRequest("GET", "u1"), { params: { id: "evt_full" } });
+  assert.equal((await after.json()).isWaitlisted, false);
+});
+
+test("API: DELETE /api/events/[id]/waitlist returns 404 when the user has no registration", async () => {
+  const res = await waitlistRouteDelete(waitlistRequest("DELETE", "u2"), { params: { id: "evt_full" } });
+  assert.equal(res.status, 404);
+  assert.equal((await res.json()).error, "Registration not found");
+});

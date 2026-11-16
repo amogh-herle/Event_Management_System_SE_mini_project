@@ -16,6 +16,7 @@ import {
   type NotifyEventParticipantsResult,
 } from "@/lib/registration";
 import { isEventDatePast } from "@/lib/eventDates";
+import { logger } from "@/lib/logger";
 import { logEvent } from "@/lib/auditLog";
 
 // FR-005b: the event change has already been committed when this runs, so
@@ -27,7 +28,7 @@ async function notifyParticipantsSafely(
   try {
     return await notifyEventParticipants(params);
   } catch (err) {
-    console.error("[events/:id] participant notification failed:", err);
+    logger.error("events/:id", "participant notification failed", err);
     return { recipients: 0, sent: 0, failed: 0 };
   }
 }
@@ -99,7 +100,7 @@ export async function GET(
     });
   } catch (err) {
     if (!(err instanceof Prisma.PrismaClientInitializationError)) {
-      console.error("[events/:id] failed to fetch event:", err);
+      logger.error("events/:id", "failed to fetch event", err);
       return NextResponse.json({ error: "Failed to load event" }, { status: 500 });
     }
 
@@ -224,7 +225,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
-    console.error("[events/:id] failed to cancel event:", err);
+    logger.error("events/:id", "failed to cancel event", err);
     return NextResponse.json({ error: "Failed to cancel event" }, { status: 500 });
   }
 }
@@ -402,7 +403,7 @@ export async function PUT(
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
-    console.error("[events/:id] failed to update event:", err);
+    logger.error("events/:id", "failed to update event", err);
     return NextResponse.json({ error: "Failed to update event" }, { status: 500 });
   }
 }
@@ -479,7 +480,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
-    console.error("[events/:id] failed to delete event:", err);
+    logger.error("events/:id", "failed to delete event", err);
     return NextResponse.json({ error: "Failed to delete event" }, { status: 500 });
   }
 }
