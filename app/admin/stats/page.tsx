@@ -124,7 +124,7 @@ export default function AdminStatsPage() {
         </div>
       </header>
 
-      <main className="events-directory-container">
+      <main id="main" className="events-directory-container">
         <div className="directory-header" style={{ marginBottom: "1.5rem" }}>
           <div>
             <span className="badge badge-primary">FR-010b • Admin</span>
@@ -201,7 +201,7 @@ export default function AdminStatsPage() {
         {loadState === "unauthorized" && (
           <div className="empty-state-card">
             <AlertIcon size={32} />
-            <h3>Not signed in</h3>
+            <h2>Not signed in</h2>
             <p>You need to be logged in with an administrator account to view platform statistics.</p>
             <Link href="/login" className="btn btn-primary" style={{ marginTop: "1rem" }}>
               Log in
@@ -212,7 +212,7 @@ export default function AdminStatsPage() {
         {loadState === "forbidden" && (
           <div className="empty-state-card">
             <ShieldIcon size={32} />
-            <h3>Access denied</h3>
+            <h2>Access denied</h2>
             <p>Only administrator accounts are permitted to view platform-wide statistics.</p>
             <Link href="/events" className="btn btn-ghost" style={{ marginTop: "1rem" }}>
               Back to events
@@ -343,7 +343,7 @@ export default function AdminStatsPage() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))",
                 gap: "20px",
                 marginBottom: "2rem",
               }}
@@ -563,7 +563,7 @@ export default function AdminStatsPage() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+                gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))",
                 gap: "20px",
                 marginBottom: "2rem",
               }}
@@ -580,7 +580,7 @@ export default function AdminStatsPage() {
               >
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
                   <CalendarIcon size={18} />
-                  <h3 style={{ fontSize: "16px", margin: 0 }}>Event Lifecycle</h3>
+                  <h2 style={{ fontSize: "16px", margin: 0 }}>Event Lifecycle</h2>
                 </div>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
                   <tbody>
@@ -624,7 +624,7 @@ export default function AdminStatsPage() {
               >
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
                   <UsersIcon size={18} />
-                  <h3 style={{ fontSize: "16px", margin: 0 }}>User Demographics</h3>
+                  <h2 style={{ fontSize: "16px", margin: 0 }}>User Demographics</h2>
                 </div>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
                   <tbody>
@@ -680,7 +680,7 @@ export default function AdminStatsPage() {
               >
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
                   <BarChartIcon size={18} />
-                  <h3 style={{ fontSize: "16px", margin: 0 }}>Capacity & Health</h3>
+                  <h2 style={{ fontSize: "16px", margin: 0 }}>Capacity & Health</h2>
                 </div>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
                   <tbody>
@@ -753,7 +753,7 @@ export default function AdminStatsPage() {
               >
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
                   <TagIcon size={18} />
-                  <h3 style={{ fontSize: "16px", margin: 0 }}>Events by Category</h3>
+                  <h2 style={{ fontSize: "16px", margin: 0 }}>Events by Category</h2>
                 </div>
 
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>

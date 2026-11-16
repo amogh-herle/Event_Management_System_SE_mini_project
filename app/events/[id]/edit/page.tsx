@@ -334,7 +334,7 @@ export default function EditEventPage() {
         </div>
       </header>
 
-      <main className="event-create-container">{body}</main>
+      <main id="main" className="event-create-container">{body}</main>
     </div>
   );
 }

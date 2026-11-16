@@ -48,7 +48,7 @@ export default async function EventRegistrantsPage({ params }: RegistrantsPagePr
         <header className="nav">
           <Brand />
         </header>
-        <main className="hero" style={{ maxWidth: "600px", margin: "4rem auto", textAlign: "center" }}>
+        <main id="main" className="hero" style={{ maxWidth: "600px", margin: "4rem auto", textAlign: "center" }}>
           <div className="card" style={{ padding: "2rem" }}>
             <h2>Access Denied</h2>
             <p style={{ color: "var(--text-muted)", margin: "1rem 0" }}>
@@ -84,7 +84,7 @@ export default async function EventRegistrantsPage({ params }: RegistrantsPagePr
         </div>
       </header>
 
-      <main className="events-directory-container" style={{ maxWidth: "1100px", margin: "2rem auto", padding: "0 1.5rem" }}>
+      <main id="main" className="events-directory-container" style={{ maxWidth: "1100px", margin: "2rem auto", padding: "0 1.5rem" }}>
         {/* Header Breadcrumb & Actions */}
         <div style={{ marginBottom: "1.5rem" }}>
           <nav style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "0.5rem" }}>
@@ -133,7 +133,7 @@ export default async function EventRegistrantsPage({ params }: RegistrantsPagePr
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(200px, 100%), 1fr))",
             gap: "1rem",
             marginBottom: "2rem",
           }}
@@ -212,7 +212,7 @@ export default async function EventRegistrantsPage({ params }: RegistrantsPagePr
               <p style={{ marginTop: "0.75rem", fontSize: "1rem" }}>No participants registered for this event yet.</p>
             </div>
           ) : (
-            <div style={{ overflowX: "auto" }}>
+            <div className="table-scroll" role="region" aria-label="Participant roster" tabIndex={0}>
               <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.9rem" }}>
                 <thead>
                   <tr style={{ borderBottom: "2px solid var(--border)", color: "var(--text-muted)" }}>

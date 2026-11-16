@@ -31,6 +31,10 @@ export const DEMO_ADMIN: AuthUser = {
   role: Role.ADMIN,
 };
 
+export function demoRoleFallbackEnabled(): boolean {
+  return process.env.NODE_ENV !== "production";
+}
+
 function readCookie(request: Request | undefined, name: string): string | null {
   if (request) {
     const cookieHeader = request.headers.get("cookie") || "";
@@ -77,6 +81,12 @@ export async function getAuthUserFromRequest(request?: Request): Promise<AuthUse
     }
     // Signature invalid or expired — not an attack signal, just "not
     // logged in"; fall through to the demo claim below.
+  }
+
+  // SEC_13 / SRSec 3.1: the demo role claim is client-set, so it is only
+  // honoured outside production builds.
+  if (!demoRoleFallbackEnabled()) {
+    return null;
   }
 
   const roleHeader = readRoleHeader(request);

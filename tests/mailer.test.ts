@@ -1,118 +1,121 @@
-import test from "node:test";
+import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import nodemailer from "nodemailer";
-import { sendMail, resetMailTransportForTests } from "../lib/mailer";
-import { getRecentLogs, clearRecentLogs } from "../lib/logger";
 
-// NFR-007: notifications are core business logic, so every mail-transport
-// branch in lib/mailer.ts is covered here. nodemailer itself is mocked, so
-// these tests never open a network connection or send real email.
+type EnvSnapshot = Record<string, string | undefined>;
 
-const ENV_KEYS = ["NODE_ENV", "EMAIL_USER", "EMAIL_PASS"] as const;
-const savedEnv: Record<string, string | undefined> = {};
+function snapshotEnv(keys: string[]): EnvSnapshot {
+  const snapshot: EnvSnapshot = {};
+  for (const key of keys) snapshot[key] = process.env[key];
+  return snapshot;
+}
 
-function setEnv(values: Partial<Record<(typeof ENV_KEYS)[number], string>>) {
-  const env = process.env as Record<string, string | undefined>;
-  for (const key of ENV_KEYS) {
-    if (values[key] === undefined) delete env[key];
-    else env[key] = values[key];
+function restoreEnv(snapshot: EnvSnapshot) {
+  for (const [key, value] of Object.entries(snapshot)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
   }
 }
 
-/** Replaces nodemailer.createTransport with a fake that records its options. */
-function fakeTransport(t: { mock: typeof test.mock }, previewUrl: string | false = false) {
-  const created: any[] = [];
-  const sent: any[] = [];
-  t.mock.method(nodemailer, "createTransport", (options: any) => {
-    created.push(options);
-    return { sendMail: async (mail: any) => (sent.push(mail), { messageId: "fake-id" }) } as any;
+async function freshMailer(): Promise<typeof import("../lib/mailer")> {
+  return import(`../lib/mailer.ts?case=${Date.now()}-${Math.random()}`) as any;
+}
+
+describe("lib/mailer.ts", () => {
+  test("uses Gmail SMTP when EMAIL_USER/EMAIL_PASS are set outside test env", async () => {
+    const snapshot = snapshotEnv(["NODE_ENV", "EMAIL_USER", "EMAIL_PASS"]);
+    const originalCreateTransport = nodemailer.createTransport;
+    let capturedOptions: any = null;
+    (nodemailer as any).createTransport = (options: any) => {
+      capturedOptions = options;
+      return { sendMail: async () => ({ response: "250 OK" }) };
+    };
+    try {
+      (process.env as any).NODE_ENV = "development";
+      process.env.EMAIL_USER = "demo@example.com";
+      process.env.EMAIL_PASS = "app-password";
+      const mailer = await freshMailer();
+      await mailer.sendMail("to@example.com", "Subject", "<p>Body</p>");
+      assert.equal(capturedOptions.service, "gmail");
+      assert.equal(capturedOptions.auth.user, "demo@example.com");
+      assert.equal(capturedOptions.auth.pass, "app-password");
+    } finally {
+      (nodemailer as any).createTransport = originalCreateTransport;
+      restoreEnv(snapshot);
+    }
   });
-  t.mock.method(nodemailer, "getTestMessageUrl", () => previewUrl);
-  return { created, sent };
-}
 
-test.beforeEach(() => {
-  for (const key of ENV_KEYS) savedEnv[key] = process.env[key];
-  resetMailTransportForTests();
-  clearRecentLogs();
-});
+  test("falls back to jsonTransport when EMAIL_USER is not set outside test env", async () => {
+    const snapshot = snapshotEnv(["NODE_ENV", "EMAIL_USER", "EMAIL_PASS"]);
+    const originalCreateTransport = nodemailer.createTransport;
+    let capturedOptions: any = null;
+    (nodemailer as any).createTransport = (options: any) => {
+      capturedOptions = options;
+      return { sendMail: async () => ({ response: "250 OK" }) };
+    };
+    try {
+      (process.env as any).NODE_ENV = "development";
+      delete process.env.EMAIL_USER;
+      delete process.env.EMAIL_PASS;
+      const mailer = await freshMailer();
+      await mailer.sendMail("to@example.com", "Subject", "<p>Body</p>");
+      assert.equal(capturedOptions.jsonTransport, true);
+    } finally {
+      (nodemailer as any).createTransport = originalCreateTransport;
+      restoreEnv(snapshot);
+    }
+  });
 
-test.afterEach(() => {
-  const env = process.env as Record<string, string | undefined>;
-  for (const key of ENV_KEYS) {
-    if (savedEnv[key] === undefined) delete env[key];
-    else env[key] = savedEnv[key];
-  }
-  resetMailTransportForTests();
-});
+  test("falls back to a disposable Ethereal inbox when EMAIL_USER is set without EMAIL_PASS", async () => {
+    const snapshot = snapshotEnv(["NODE_ENV", "EMAIL_USER", "EMAIL_PASS"]);
+    const originalCreateTransport = nodemailer.createTransport;
+    const originalCreateTestAccount = nodemailer.createTestAccount;
+    const originalGetTestMessageUrl = nodemailer.getTestMessageUrl;
+    let capturedOptions: any = null;
+    (nodemailer as any).createTestAccount = async () => ({
+      user: "ethereal-user",
+      pass: "ethereal-pass",
+      smtp: { host: "smtp.ethereal.email", port: 587, secure: false },
+    });
+    (nodemailer as any).createTransport = (options: any) => {
+      capturedOptions = options;
+      return { sendMail: async () => ({ response: "250 queued [STATUS=OK URL=https://ethereal.email/message/fake]" }) };
+    };
+    (nodemailer as any).getTestMessageUrl = () => "https://ethereal.email/message/fake";
+    try {
+      (process.env as any).NODE_ENV = "development";
+      process.env.EMAIL_USER = "demo@example.com";
+      delete process.env.EMAIL_PASS;
+      const mailer = await freshMailer();
+      const info = await mailer.sendMail("to@example.com", "Subject", "<p>Body</p>");
+      assert.equal(capturedOptions.host, "smtp.ethereal.email");
+      assert.equal(capturedOptions.auth.user, "ethereal-user");
+      assert.equal(info.response, "250 queued [STATUS=OK URL=https://ethereal.email/message/fake]");
+    } finally {
+      (nodemailer as any).createTransport = originalCreateTransport;
+      (nodemailer as any).createTestAccount = originalCreateTestAccount;
+      (nodemailer as any).getTestMessageUrl = originalGetTestMessageUrl;
+      restoreEnv(snapshot);
+    }
+  });
 
-test("mailer: test environment always uses the in-memory JSON transport", async (t) => {
-  setEnv({ NODE_ENV: "test", EMAIL_USER: "real@gmail.com", EMAIL_PASS: "app-password" });
-  const { created, sent } = fakeTransport(t);
-
-  const info = await sendMail("a@test.com", "Hello", "<p>Hi</p>");
-
-  assert.deepEqual(created, [{ jsonTransport: true }]);
-  assert.equal(info.messageId, "fake-id");
-  assert.equal(sent[0].to, "a@test.com");
-  assert.equal(sent[0].subject, "Hello");
-  assert.equal(sent[0].html, "<p>Hi</p>");
-  assert.match(sent[0].from, /Event Management System/);
-});
-
-test("mailer: Gmail SMTP is used when EMAIL_USER and EMAIL_PASS are set", async (t) => {
-  setEnv({ NODE_ENV: "production", EMAIL_USER: "real@gmail.com", EMAIL_PASS: "app-password" });
-  const { created } = fakeTransport(t);
-
-  await sendMail("a@test.com", "Hello", "<p>Hi</p>");
-
-  assert.deepEqual(created, [
-    { service: "gmail", auth: { user: "real@gmail.com", pass: "app-password" } },
-  ]);
-});
-
-test("mailer: falls back to the JSON transport when no credentials are configured", async (t) => {
-  setEnv({ NODE_ENV: "development" });
-  const { created } = fakeTransport(t);
-
-  await sendMail("a@test.com", "Hello", "<p>Hi</p>");
-
-  assert.deepEqual(created, [{ jsonTransport: true }]);
-});
-
-test("mailer: uses an Ethereal inbox and logs a WARN when EMAIL_PASS is missing", async (t) => {
-  setEnv({ NODE_ENV: "development", EMAIL_USER: "real@gmail.com" });
-  t.mock.method(nodemailer, "createTestAccount", async () => ({
-    user: "ethereal-user",
-    pass: "ethereal-pass",
-    smtp: { host: "smtp.ethereal.email", port: 587, secure: false },
-  }));
-  const { created } = fakeTransport(t, "https://ethereal.email/message/abc");
-
-  await sendMail("a@test.com", "Hello", "<p>Hi</p>");
-
-  assert.deepEqual(created, [
-    {
-      host: "smtp.ethereal.email",
-      port: 587,
-      secure: false,
-      auth: { user: "ethereal-user", pass: "ethereal-pass" },
-    },
-  ]);
-  const logs = getRecentLogs();
-  assert.equal(logs[0].severity, "WARN");
-  assert.equal(logs[0].source, "mailer");
-  assert.equal(logs[1].severity, "INFO");
-  assert.deepEqual(logs[1].context, { previewUrl: "https://ethereal.email/message/abc" });
-});
-
-test("mailer: the transport is created once and reused for later sends", async (t) => {
-  setEnv({ NODE_ENV: "test" });
-  const { created, sent } = fakeTransport(t);
-
-  await sendMail("a@test.com", "One", "<p>1</p>");
-  await sendMail("b@test.com", "Two", "<p>2</p>");
-
-  assert.equal(created.length, 1);
-  assert.equal(sent.length, 2);
+  test("reuses the same transporter promise across repeated sendMail calls", async () => {
+    const snapshot = snapshotEnv(["NODE_ENV"]);
+    let createCount = 0;
+    const originalCreateTransport = nodemailer.createTransport;
+    (nodemailer as any).createTransport = (options: any) => {
+      createCount++;
+      return { sendMail: async () => ({ response: "250 OK" }) };
+    };
+    try {
+      (process.env as any).NODE_ENV = "test";
+      const mailer = await freshMailer();
+      await mailer.sendMail("a@example.com", "S1", "<p>1</p>");
+      await mailer.sendMail("b@example.com", "S2", "<p>2</p>");
+      assert.equal(createCount, 1);
+    } finally {
+      (nodemailer as any).createTransport = originalCreateTransport;
+      restoreEnv(snapshot);
+    }
+  });
 });

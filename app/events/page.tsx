@@ -361,7 +361,7 @@ export default function EventsDirectoryPage() {
         </div>
       </header>
 
-      <main className="events-directory-container">
+      <main id="main" className="events-directory-container">
         <div className="directory-header">
           <div>
             <span className="badge badge-primary">Event Directory</span>
@@ -454,7 +454,7 @@ export default function EventsDirectoryPage() {
             aria-label="Filter events"
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(150px, 100%), 1fr))",
               gap: "12px",
               alignItems: "center",
               maxWidth: "820px",
@@ -516,7 +516,7 @@ export default function EventsDirectoryPage() {
           ) : registrations.length === 0 ? (
             <div className="empty-state-card">
               <TicketIcon size={44} />
-              <h3>No registrations found</h3>
+              <h2>No registrations found</h2>
               <p>You haven&apos;t registered or joined any waitlists yet.</p>
               <button
                 type="button"
@@ -650,7 +650,7 @@ export default function EventsDirectoryPage() {
         ) : filteredEvents.length === 0 && hasActiveFilters ? (
           <div className="empty-state-card">
             <TicketIcon size={44} />
-            <h3>No matching events</h3>
+            <h2>No matching events</h2>
             <p>No events match your search or filters. Try different keywords or clear the filters.</p>
             <button type="button" className="btn btn-primary" onClick={clearFilters}>
               <XCircleIcon size={16} /> Clear filters
@@ -659,7 +659,7 @@ export default function EventsDirectoryPage() {
         ) : filteredEvents.length === 0 ? (
           <div className="empty-state-card">
             <TicketIcon size={44} />
-            <h3>No events found</h3>
+            <h2>No events found</h2>
             <p>
               {tab === "organizer"
                 ? "You haven't created any events yet. Publish your first event to get started!"
@@ -1062,7 +1062,7 @@ export default function EventsDirectoryPage() {
                 <p style={{ marginTop: "0.5rem" }}>No participants registered for this event yet.</p>
               </div>
             ) : (
-              <div style={{ maxHeight: "350px", overflowY: "auto", border: "1px solid var(--border)", borderRadius: "var(--radius)" }}>
+              <div style={{ maxHeight: "350px", overflow: "auto", border: "1px solid var(--border)", borderRadius: "var(--radius)" }} role="region" aria-label="Registered participants" tabIndex={0}>
                 <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.85rem" }}>
                   <thead style={{ background: "var(--surface-2)", position: "sticky", top: 0 }}>
                     <tr style={{ borderBottom: "1px solid var(--border)" }}>

@@ -8,7 +8,6 @@
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate",
-    "vercel-build": "prisma db push --accept-data-loss && next build",
     "test": "NODE_ENV=test tsx --test \"tests/*.test.ts\"",
     "test:coverage": "mkdir -p coverage && NODE_ENV=test tsx --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info \"tests/*.test.ts\"",
     "coverage:check": "tsx scripts/check-core-coverage.ts coverage/lcov.info",

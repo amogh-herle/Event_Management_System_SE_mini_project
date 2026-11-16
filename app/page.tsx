@@ -104,7 +104,7 @@ export default async function HomePage() {
                 {r.icon}
               </span>
               <div>
-                <h3>{r.title}</h3>
+                <h2>{r.title}</h2>
                 <p>{r.body}</p>
                 {r.href && (
                   <div style={{ marginTop: "10px" }}>

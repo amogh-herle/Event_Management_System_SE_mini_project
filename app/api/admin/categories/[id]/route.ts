@@ -13,6 +13,7 @@ import {
   toAdminCategory,
 } from "@/lib/categories";
 import { logger } from "@/lib/logger";
+import { logEvent } from "@/lib/auditLog";
 
 // PATCH /api/admin/categories/[id] — FR-006c: admin renames a category.
 //   Body: { name }
@@ -67,6 +68,13 @@ export async function PATCH(
       return NextResponse.json({ error: "Category not found" }, { status: 404 });
     }
     logger.error("admin/categories/:id", "failed to rename category", err);
+    await logEvent({
+      severity: "ERROR",
+      action: "admin.categories.rename.failed",
+      actorId: auth.user.id,
+      actorRole: auth.user.role,
+      details: err instanceof Error ? err.message : String(err),
+    });
     return NextResponse.json({ error: "Failed to update category" }, { status: 500 });
   }
 }
@@ -126,6 +134,13 @@ export async function DELETE(
       return NextResponse.json({ error: "Category not found" }, { status: 404 });
     }
     logger.error("admin/categories/:id", "failed to delete category", err);
+    await logEvent({
+      severity: "ERROR",
+      action: "admin.categories.delete.failed",
+      actorId: auth.user.id,
+      actorRole: auth.user.role,
+      details: err instanceof Error ? err.message : String(err),
+    });
     return NextResponse.json({ error: "Failed to delete category" }, { status: 500 });
   }
 }
