@@ -54,7 +54,7 @@ Verified against `origin/main` (up to date with local `main`) plus the local wor
 - [~] All tests executed per plan: everything that can run locally was run on 13 Nov. **Not executed:** usability study (needs people), TLS/encryption audit (hosting), monthly uptime, Safari/Edge. See Test Plan §14.
 - [x] Generated reports in `docs/reports/`: `test-run.txt`, `coverage-report.txt`, `live-api-test-run.txt`, `fault-injection/` (fail → fix demonstration)
 
-Results: 319/319 automated pass, 74/74 live checks pass, line coverage 96.35% (core modules 93.40%, CI-gated at 80%). **Not met or not run:** NFT_02 (latency at 500 concurrent users), NFT_08 usability study, NFT_07 daily backup/uptime monitoring, SEC_06 (TLS/at-rest, project runs locally). NFR-004, NFR-006 and NFR-007 work was merged in PRs #63, #64, #65.
+Results: 319/319 automated pass, 74/74 live checks pass, line coverage 93.18% (branch 82.46%) (core modules 93.40%, CI-gated at 80%). **Not met or not run:** NFT_02 (latency at 500 concurrent users), NFT_08 usability study, NFT_07 daily backup/uptime monitoring, SEC_06 (TLS/at-rest, project runs locally). NFR-004, NFR-006 and NFR-007 work was merged in PRs #63, #64, #65.
 
 ## Part 4 — Final evaluation (team to do at the demo)
 

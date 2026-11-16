@@ -158,7 +158,7 @@ NFT = [
  ("NFT_06", "NFR-004", "RBAC, session timeout, account lockout, audit log.", "Pass", "RBAC (SEC_04/05), lockout (SEC_03), audit log (SEC_10), 30-minute idle timeout (SEC_11) and demo-role gating (SEC_13) all covered by tests/nfr004-access-control.test.ts and the RBAC suites."),
  ("NFT_07", "NFR-005", "Restore drill from backup completes within 4 h with <= 24 h data loss; uptime >= 99.5%.", "Partial", "Local drill (10,000 users / 1,000 events / 100,405 registrations): pg_dump 0.38 s, pg_restore into a fresh DB 1.0 s, row counts identical. Daily scheduled backup and monthly uptime monitoring are not configured, so RPO and 99.5% uptime are not demonstrated."),
  ("NFT_08", "NFR-006", "WCAG 2.1 A/AA automated scan (axe-core 4.10.2) and a first-time-user study (>= 90% in 3 min).", "Partial", "axe-core: 0 violations on 9 pages at 1280 px and at 320 px (home, login, signup, forgot-password, events, event detail, create event, my registrations, admin). The usability study was not run (needs human participants)."),
- ("NFT_09", "NFR-007", "Automated line coverage of core business logic >= 80%.", "Pass", "319 tests; 96.35% overall lines, 85.91% branches; core modules combined 93.40% (gate in CI via scripts/check-core-coverage.ts); lib/registration.ts 92.77%, lib/mailer.ts 100%, lib/emailTemplates.ts 100%."),
+ ("NFT_09", "NFR-007", "Automated line coverage of core business logic >= 80%.", "Pass", "319 tests; 93.18% overall lines, 82.46% branches; core modules combined 93.40% (gate in CI via scripts/check-core-coverage.ts); lib/registration.ts 92.77%, lib/mailer.ts 100%, lib/emailTemplates.ts 100%."),
   ("NFT_10", "NFR-007", "A forced application error appears in a central log with timestamp and severity.", "Pass", "lib/logger.ts (PR #64) writes timestamped, severity-tagged entries to a central in-memory/console log used by the API routes; tests/logger.test.ts. Admin actions are additionally persisted by AuditLog (PR #65)."),
   ("NFT_11", "NFR-006", "No horizontal scroll at 320 px on key pages.", "Pass", "PR #63 added a 320 px layout and scroll-region fixes; tests/accessibility.test.ts asserts the structure. Not re-measured in a real browser after the merge."),
 ]
@@ -184,4 +184,4 @@ SEC = [
 ]
 
 # Final stats for the execution summary
-STATS = dict(auto_total=319, auto_pass=319, live_total=74, live_pass=74, coverage="96.35%", func_cases=60, func_auto=58, func_manual=2)
+STATS = dict(auto_total=319, auto_pass=319, live_total=74, live_pass=74, coverage="93.18%", func_cases=60, func_auto=58, func_manual=2)
