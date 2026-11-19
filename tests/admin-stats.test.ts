@@ -482,7 +482,7 @@ test("FR-010b / IT_04: Alias endpoint GET /api/admin/statistics behaves identica
 });
 
 // ---------------------------------------------------------------------------
-// System Test (Documents/TEST-CASE_DOCUMENT.pdf FR-010 ST_01)
+// System Test (Documents/TEST-PLAN_DOCUMENT.pdf FR-010 ST_01)
 // ---------------------------------------------------------------------------
 
 test("FR-010b / ST_01: Platform Statistics shows exact database totals for 50 events, 300 users, 900 registrations", async () => {
