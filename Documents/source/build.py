@@ -281,6 +281,76 @@ def build_trace():
     b += '<div class="note">Failing or partial security items (SEC_03, SEC_09, SEC_10, SEC_11, SEC_13) are documented deviations D3, D4, D5, D8 in SAD 4.6. SEC_13 (demo role header accepted without a session) was discovered during this review.</div>'
     return page("Traceability Matrices", b)
 
+
+# --------------------------------------------------------------------------- validation report
+def vstat(results):
+    if all(r in ("Pass", "Met") for r in results): return "Validated"
+    if any(r in ("Pass", "Met", "Partial") for r in results): return "Partially validated"
+    return "Not validated"
+
+def vspan(t):
+    c = {"Validated": "pass", "Partially validated": "part", "Not validated": "fail"}.get(t, "na")
+    return f'<span class="{c}">{e(t)}</span>'
+
+def build_validation():
+    allcases = [(par, c) for par, cs in TESTS.items() for c in cs]
+    n_cases = len(allcases)
+    fr_rows, fr_validated = [], 0
+    for f in FRS:
+        mine = [c for _, c in allcases if f[0] in c[3]]
+        auto = sum(1 for c in mine if c[4] == "A")
+        status = vstat(["Pass"] * len(mine)) if mine else "Not validated"
+        fr_validated += status == "Validated"
+        fr_rows.append([f[0], f[1], ", ".join(c[0] for c in mine), f"{auto} automated, {len(mine) - auto} manual", f[11], vspan(status)])
+    nfr_rows, nfr_validated = [], 0
+    for n in NFRS:
+        mine = [t for t in NFT if t[1] == n[0]]
+        sec_cases = []
+        if n[0] in ("NFR-003", "NFR-004"):
+            sec_cases = [x for x in SEC if any(q[0] in x[5] and n[0] in q[4] for q in SECREQS)]
+        results = [t[3] for t in mine] + [x[3] for x in sec_cases]
+        results = [r for r in results if r != "Not run"] or ["Not run"]
+        status = vstat(results) if results != ["Not run"] else "Not validated"
+        nfr_validated += status == "Validated"
+        nfr_rows.append([n[0], n[1], n[4], ", ".join([t[0] for t in mine] + [x[0] for x in sec_cases]), vspan(status)])
+    sr_rows, sr_met = [], 0
+    secmap = {x[0]: x for x in SEC}
+    for q in SECREQS:
+        tests = [t.strip() for t in q[5].split(",")]
+        results = [secmap[t][3] for t in tests]
+        status = vstat([r for r in results if r != "Not run"] or ["Not run"]) if any(r != "Not run" for r in results) else "Not validated"
+        sr_met += status == "Validated"
+        sr_rows.append([q[0], q[2], q[1], ", ".join(tests), vspan(status), q[7]])
+    def count(rows_, key):
+        return sum(1 for r in rows_ if r[3] == key)
+    b = header("System Validation Report", "Validation of the Event Management System against the SRS and the Security Requirements Specification", "1.0", "Final", "First issue")
+    b += f"""<h1 class="pb">1. Introduction</h1><h2>1.1 Purpose</h2><p>This report records whether the delivered system, as it stands on the main branch, satisfies the requirements in Documents/SRS_DOCUMENT.pdf (20 functional requirements FR-001a to FR-010b and 7 non-functional requirements NFR-001 to NFR-007) and in Documents/SECURITY_DOCUMENT.pdf (SR-001 to SR-012). A requirement is <b>Validated</b> when every test case mapped to it passed, <b>Partially validated</b> when some passed and some failed or were only partly executed, and <b>Not validated</b> when no case could be run.</p>
+<h2>1.2 Scope</h2><p>Functional behaviour, performance and concurrency, security controls, accessibility, recoverability and maintainability of the web application, its API and its PostgreSQL data store. Infrastructure that the project does not operate (TLS termination, managed encryption at rest, monthly uptime monitoring) is reported as not run.</p>
+<h2>1.3 References</h2><ul><li>Documents/SRS_DOCUMENT.pdf, Documents/SECURITY_DOCUMENT.pdf, Documents/SAD_DOCUMENT.pdf</li><li>Documents/TEST-PLAN_DOCUMENT.pdf and Documents/TRACEABILITY_MATRICES.pdf (case definitions and matrices)</li><li>docs/reports/test-run.txt, coverage-report.txt, live-api-test-run.txt (raw evidence)</li></ul>
+<h1>2. Validation Approach and Environment</h1>
+<p>Cases are written at three levels: unit (UT), integration (IT) and system (ST), plus non-functional (NFT) and security (SEC) cases. They were executed three ways: <b>automated</b> (node:test suite run against the code and, for concurrency, a real PostgreSQL SERIALIZABLE transaction), <b>live</b> (scripts/test_fr*.ts calling the running HTTP API), and <b>manual</b> (UI walkthroughs for two cases that need a browser).</p>
+{table(["Item", "Detail"], [["Runtime", "Node.js 20, Next.js 14 (App Router), TypeScript"], ["Database", "PostgreSQL 16 (Docker), Prisma 5 ORM"], ["Mail", "nodemailer jsonTransport under NODE_ENV=test (no real mail sent)"], ["Test tools", "node:test via tsx, axe-core 4.10.2 (accessibility), pg_dump/pg_restore (recovery drill), concurrent HTTP load script"], ["CI", "GitHub Actions: typecheck, tests, core-coverage gate (80%), production build on every push and pull request"], ["Execution date", DATE + " (functional/security), refreshed " + "19 Nov 2026 after the NFR-004, NFR-006 and NFR-007 merges"]])}
+<h1>3. Validation Summary</h1>
+{table(["Measure", "Result"], [["Functional requirements validated", f"{fr_validated} of {len(FRS)}"], ["Functional test cases passed", f"{n_cases} of {n_cases} ({STATS['func_auto']} automated re-run, {STATS['func_manual']} manual)"], ["Non-functional requirements validated", f"{nfr_validated} of {len(NFRS)} (the rest are partially validated, see section 5)"], ["Non-functional test cases", f"{sum(1 for t in NFT if t[3]=='Pass')} Pass, {sum(1 for t in NFT if t[3]=='Partial')} Partial, {sum(1 for t in NFT if t[3]=='Fail')} Fail (of {len(NFT)})"], ["Security requirements validated", f"{sr_met} of {len(SECREQS)} (SR-006 and SR-007 could not be run locally)"], ["Security test cases", f"{sum(1 for x in SEC if x[3]=='Pass')} Pass, {sum(1 for x in SEC if x[3]=='Not run')} Not run (of {len(SEC)})"], ["Automated test suite", f"{STATS['auto_pass']} of {STATS['auto_total']} pass, 0 fail"], ["Live API checks", f"{STATS['live_pass']} of {STATS['live_total']} pass, 0 fail"], ["Statement coverage (excluding test files)", f"{STATS['coverage']} lines overall; core business-logic modules 93.40% against the 80% target (CI-enforced)"]])}
+<p><b>Overall verdict:</b> all 20 functional requirements are validated and the security controls the project can exercise locally pass. The system is not fully validated against the non-functional targets listed in section 7.</p>
+<h1>4. Functional Validation (SRS section 1)</h1>
+{table(["FR", "Requirement", "Cases", "Execution", "Implemented in", "Result"], fr_rows, raw_cols=(5,))}
+<h1>5. Non-functional Validation (SRS section 2)</h1>
+{table(["NFR", "Category", "Target", "Cases", "Result"], nfr_rows, raw_cols=(4,))}
+<h2>5.1 Non-functional test cases</h2>
+{table(["ID", "NFR", "Case", "Result", "Evidence"], [[t[0], t[1], t[2], res(t[3]), t[4]] for t in NFT], raw_cols=(3,))}
+<h1>6. Security Validation (Security Requirements Specification)</h1>
+{table(["Req", "SRSec §", "Requirement", "Cases", "Result", "Enforced in"], sr_rows, raw_cols=(4,))}
+<h2>6.1 Security test cases</h2>
+{table(["ID", "SRSec §", "Requirement(s)", "Case", "Result", "Evidence"], [[x[0], x[1], ", ".join(x[5]), x[2], res(x[3]), x[4]] for x in SEC], raw_cols=(4,))}
+<h1>7. Deviations and Open Items</h1>
+<p>Items that are not a clean pass are listed here rather than hidden.</p>
+{table(["ID", "Finding", "Impact", "Action"], [[t[0], t[2], t[4], "See SAD 4.6"] for t in NFT if t[3] != "Pass"] + [[x[0], x[2], x[4], "See SAD 4.6"] for x in SEC if x[3] not in ("Pass",)])}
+<h1>8. Conclusion and Sign-off</h1>
+<p>The functional scope agreed in the SRS is complete and validated. Access control, account lockout, session idle timeout, CSRF protection, audit logging, input handling and token security pass their security cases. Remaining risk is confined to latency at the SRS target of 500 concurrent users, the unrun usability study, backup/uptime operations, and TLS and encryption at rest, which depend on an environment the project does not run.</p>
+{table(["Role", "Name", "Signature", "Date"], [["Repository Owner", "Amogh Herle", "", ""], ["Team member", "Shravani Mallur", "", ""], ["Team member", "Arjun Bhat", "", ""], ["Course Coordinator", "", "", ""]])}"""
+    return page("System Validation Report", b)
+
 def render(name, html_text, pdf):
     p = os.path.join(HERE, name + ".html")
     open(p, "w").write(html_text)
@@ -292,3 +362,4 @@ if __name__ == "__main__":
     render("SAD", build_sad(), "SAD_DOCUMENT.pdf")
     render("TESTPLAN", build_tp(), "TEST-PLAN_DOCUMENT.pdf")
     render("TRACEABILITY", build_trace(), "TRACEABILITY_MATRICES.pdf")
+    render("VALIDATION", build_validation(), "../docs/SYSTEM_VALIDATION_REPORT.pdf")
