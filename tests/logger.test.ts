@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -127,14 +127,33 @@ test("NFR-007: LOG_FILE appends every entry to a central log file", () => {
   }
 });
 
+test("NFR-007: LOG_FILE creates a missing log directory", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ems-log-"));
+  try {
+    const file = join(dir, "logs", "nested", "app.log");
+    process.env.LOG_FILE = file;
+    logger.info("unit", "first entry");
+    assert.equal(JSON.parse(readFileSync(file, "utf8").trim()).message, "first entry");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("NFR-007: an unwritable LOG_FILE never breaks the caller", (t) => {
   const errLines: string[] = [];
   t.mock.method(console, "error", (line: string) => errLines.push(line));
-  process.env.LOG_FILE = join(tmpdir(), "ems-missing-dir", "nested", "app.log");
+  const dir = mkdtempSync(join(tmpdir(), "ems-log-"));
+  try {
+    const blocker = join(dir, "not-a-directory");
+    writeFileSync(blocker, "x");
+    process.env.LOG_FILE = join(blocker, "app.log");
 
-  assert.doesNotThrow(() => logger.error("unit", "still logged"));
-  assert.equal(getRecentLogs().length, 1);
-  assert.ok(errLines.some((l) => JSON.parse(l).message.startsWith("could not write to LOG_FILE")));
+    assert.doesNotThrow(() => logger.error("unit", "still logged"));
+    assert.equal(getRecentLogs().length, 1);
+    assert.ok(errLines.some((l) => JSON.parse(l).message.startsWith("could not write to LOG_FILE")));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("NFR-007: extra sinks receive entries, can unsubscribe, and cannot break logging", () => {

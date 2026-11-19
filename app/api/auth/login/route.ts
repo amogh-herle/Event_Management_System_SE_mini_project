@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { loginSchema } from "@/lib/validation";
 import { sessionCookieHeader } from "@/lib/session";
 import { logEvent } from "@/lib/auditLog";
+import { logger } from "@/lib/logger";
 import { ACCOUNT_LOCKED_ERROR, MAX_FAILED_LOGIN_ATTEMPTS, isLocked, nextFailureState } from "@/lib/loginLockout";
 
 const INVALID_CREDENTIALS = "Invalid email or password";
@@ -31,6 +32,7 @@ export async function POST(request: Request) {
   // Same error for "no such user" and "wrong password" — don't let login
   // double as an account-existence oracle.
   if (!user) {
+    logger.warn("auth/login", "login failed: no such account");
     return NextResponse.json({ error: INVALID_CREDENTIALS }, { status: 401 });
   }
 
@@ -55,6 +57,7 @@ export async function POST(request: Request) {
       });
       return NextResponse.json({ error: ACCOUNT_LOCKED_ERROR }, { status: 423 });
     }
+    logger.warn("auth/login", "login failed: wrong password", undefined, { userId: user.id });
     return NextResponse.json({ error: INVALID_CREDENTIALS }, { status: 401 });
   }
 
@@ -75,6 +78,8 @@ export async function POST(request: Request) {
       data: { failedLoginAttempts: 0, lockedUntil: null },
     });
   }
+
+  logger.info("auth/login", "login succeeded", { userId: user.id, role: user.role });
 
   const response = NextResponse.json({
     id: user.id,

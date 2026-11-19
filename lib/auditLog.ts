@@ -1,5 +1,6 @@
 import { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { log } from "@/lib/logger";
 
 export type LogSeverity = "INFO" | "WARN" | "ERROR";
 
@@ -19,6 +20,11 @@ interface LogEventInput {
  * any write error here is swallowed after a console.error fallback.
  */
 export async function logEvent(input: LogEventInput): Promise<void> {
+  log(input.severity, "audit", input.action, undefined, {
+    actorId: input.actorId ?? null,
+    actorRole: input.actorRole ?? null,
+    details: input.details,
+  });
   try {
     await prisma.auditLog.create({
       data: {
