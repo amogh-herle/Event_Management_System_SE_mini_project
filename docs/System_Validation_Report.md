@@ -38,7 +38,7 @@
 - **Partial: NFT_08 (NFR-006).** The automated accessibility scan is clean, but the first-time-user study (90% within 3 minutes) was not run, and Safari and Edge were not tested.
 - **Not run: SEC_06.** TLS 1.2+ and encryption at rest depend on the deployment environment.
 - Tests ran with a mocked mail transport, so no real email was sent.
-- Detailed per-module counts are in the [Unit Test Report](Unit_Test_Report.md). Coverage figures are in [Code Coverage](Code_Coverage.jpeg) and [Branch Coverage](Branch_Coverage.jpeg). The full case list with results is in `Documents/TEST-PLAN_DOCUMENT.pdf` (Appendix A and B).
+- Detailed per-module counts are in the [Unit Test Report](Unit_Test_Report.md). Coverage figures are in [Code Coverage](Code_Coverage.txt) and [Branch Coverage](Branch_Coverage.txt). The full case list with results is in `Documents/TEST-PLAN_DOCUMENT.pdf` (Appendix A and B).
 
 ## Test execution
 

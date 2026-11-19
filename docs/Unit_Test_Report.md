@@ -41,7 +41,7 @@ Tests run with `NODE_ENV=test`, so the mailer uses an in-memory JSON transport a
 
 ## Coverage
 
-Line coverage is 93.20%, branch coverage 82.55% and function coverage 85.78% (test and script files excluded). Core business-logic modules combined reach 93.40% against the 80% target, enforced in CI by `scripts/check-core-coverage.ts`. See [Code Coverage](Code_Coverage.jpeg) and [Branch Coverage](Branch_Coverage.jpeg); the raw table is in [reports/coverage-report.txt](reports/coverage-report.txt).
+Line coverage is 93.20%, branch coverage 82.55% and function coverage 85.78% (test and script files excluded). Core business-logic modules combined reach 93.40% against the 80% target, enforced in CI by `scripts/check-core-coverage.ts`. See [Code Coverage](Code_Coverage.txt) and [Branch Coverage](Branch_Coverage.txt); the raw table is in [reports/coverage-report.txt](reports/coverage-report.txt).
 
 ## Command
 

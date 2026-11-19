@@ -1,0 +1,37 @@
+Branch Coverage (branch %)
+Event Management System, node:test coverage, test and script files excluded
+Run date: 19 November 2026 (320 tests, 0 failed)
+
+File                                    Branch %
+--------------------------------------------------
+app/api/admin/categories/[id]/route.ts    83.67%
+app/api/admin/categories/route.ts         89.47%
+app/api/admin/statistics/route.ts         66.67%
+app/api/admin/stats/route.ts              83.33%
+app/api/categories/route.ts               71.43%
+app/api/events/[id]/export/route.ts       86.21%
+app/api/events/[id]/register/route.ts     93.75%
+app/api/events/[id]/route.ts              64.04%
+app/api/events/[id]/waitlist/route.ts     96.30%
+app/api/events/route.ts                   76.74%
+app/api/events/store.ts                   66.67%
+app/api/registrations/route.ts            67.27%
+app/api/reminders/route.ts                60.00%
+lib/auditLog.ts                           88.89%
+lib/auth.ts                               83.33%
+lib/categories.ts                         90.32%
+lib/csrf.ts                               81.82%
+lib/emailTemplates.ts                     98.04%
+lib/eventDates.ts                         60.00%
+lib/eventFilters.ts                       98.08%
+lib/export.ts                             76.12%
+lib/logger.ts                             98.04%
+lib/loginLockout.ts                       90.91%
+lib/mailer.ts                             95.00%
+lib/prisma.ts                             66.67%
+lib/registration.ts                       81.47%
+lib/session.ts                            96.15%
+lib/sessionEdge.ts                        87.50%
+lib/stats.ts                              78.13%
+lib/validation.ts                         95.00%
+ALL FILES                                 82.55%
