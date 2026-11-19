@@ -28,7 +28,7 @@ Sprint 2 feature work was merged by 4 November and the documents were finalised 
 
 ## CI and review
 
-The CI pipeline is described in [SPRINT_1.md](SPRINT_1.md). Pull requests #39, #40 and #45 to #54 carry a repository-owner review.
+The CI pipeline is described in [SPRINT_1.md](SPRINT_1.md).
 
 ## Demo
 
