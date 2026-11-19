@@ -1,4 +1,5 @@
-import { appendFileSync } from "node:fs";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 
 /**
  * NFR-007 (Maintainability): central application logger.
@@ -13,9 +14,8 @@ import { appendFileSync } from "node:fs";
  *    "context":{"eventId":"evt_1"}}
  *
  * Where entries go:
- *  - the server console (stderr for WARN/ERROR, stdout otherwise). On
- *    Vercel this is the project's Runtime Logs, the central log in
- *    production; locally it is the `npm run dev` terminal.
+ *  - the server console (stderr for WARN/ERROR, stdout otherwise), which
+ *    is the `npm run dev` terminal when running locally.
  *  - additionally, the file named by LOG_FILE when that env var is set
  *    (e.g. LOG_FILE=logs/app.log for a persistent local log).
  *  - an in-memory buffer of the most recent entries (getRecentLogs), used
@@ -90,6 +90,7 @@ function fileSink(entry: LogEntry): void {
   const file = process.env.LOG_FILE;
   if (!file) return;
   try {
+    mkdirSync(dirname(file), { recursive: true });
     appendFileSync(file, JSON.stringify(entry) + "\n");
   } catch (err) {
     // Never let a broken log file take a request down with it.
