@@ -135,7 +135,7 @@ def build_srs():
             f = fm[i]
             rows.append([i, f[2], "Functional", f[3], f[4], f"{f[5]} Tests: {', '.join(tm.get(i, []))}", f"Backlog #{f[6]}, {f[7]}, {f[8]}, {f[9]} pts"])
         b += f"<h2>{name}</h2><p>{e(desc)}</p>" + table(["Req ID", "Requirement (shall…)", "Type", "Priority", "Source / Stakeholder", "Acceptance criteria / Test case ref", "Comments / Dependencies"], rows)
-    b += '<h1 class="pb">5. Non-functional requirements (detailed)</h1><p>NFRs are measurable and tied to test cases in the Test Plan §5.3 and §5.1.</p>'
+    b += '<h1 class="pb">5. Non-functional requirements (detailed)</h1><p>NFRs are measurable and tied to test cases in the Test Plan (Appendix A.2 and §5.1).</p>'
     b += table(["Req ID", "Requirement", "Category", "Priority", "Acceptance criteria / Measurement", "Backlog"], [[n[0], n[2], n[1], n[3], n[4], (f"#{n[5]}, {n[6]}, {n[7]}, {n[8]} pts" if n[5] else "no backlog item")] for n in NFRS])
     b += '<h2>5.1 Security</h2><h3>5.1.1 Security objectives</h3>' + table(["ID", "Objective", "Description"], SEC_OBJ)
     b += '<h3>5.1.2 Security requirements</h3><p>Derived from Documents/SECURITY_DOCUMENT.pdf (SRSec). “Status in main” is the verified state of the delivered code as of 13 Nov 2026.</p>'
@@ -157,6 +157,7 @@ def build_sad():
 <h2>1.4 Definitions</h2>""" + table(["Term", "Meaning"], [["ADR", "Architecture Decision Record"], ["RBAC", "Role-Based Access Control"], ["ORM", "Object-Relational Mapper (Prisma)"], ["SERIALIZABLE tx", "PostgreSQL transaction at SERIALIZABLE isolation"], ["IDOR", "Insecure Direct Object Reference"], ["STRIDE", "Spoofing, Tampering, Repudiation, Information disclosure, DoS, Elevation of privilege"], ["TLS / SMTP", "Transport Layer Security / Simple Mail Transfer Protocol"]])
     b += """<h1>2. Document Overview</h1><h2>2.1 How to use this document</h2><p>Section 3 gives the architecture (diagrams, components, pattern, stack, risks, traceability, security). Section 4 gives the design (sequence diagrams, API, error handling, UX, open issues and deviations). Read 3.8 to find which component implements a requirement.</p>
 <h2>2.2 Related documents</h2><ul><li>Documents/SRS_DOCUMENT.pdf — requirements (20 FRs, 7 NFRs, security requirements, RTM)</li><li>Documents/TEST-PLAN_DOCUMENT.pdf — test plan, security validation, results</li><li>Documents/SECURITY_DOCUMENT.pdf — SRSec</li><li>Documents/USECASE_DIAGRAM.svg, USECASE_DIAGRAM_2.svg, USECASE_FLOW.pdf, COMPONENT_DIAGRAM.svg</li><li>Documents/TRACEABILITY_MATRICES.pdf — SRS→Test and Security→Test lists</li></ul>
+<h2>2.3 Use Case Diagram</h2><div class="fig"><img src="../USECASE_DIAGRAM.svg" style="width:100%"><div class="cap">Figure 0 — Use case diagram (overall); per-use-case flows are in Documents/USECASE_FLOW.pdf</div></div>
 <h1>3. Architecture</h1><h2>3.1 Goals &amp; constraints</h2><p><b>Goals:</b> correct seat accounting under concurrency (no overbooking), secure role-based access, simple deployment, testability. <b>Constraints:</b> three-person team and three sprints, free-tier hosting, single deployable unit, ORM-only data access, SMTP-only notifications.</p>
 <h2>3.2 Stakeholders &amp; concerns</h2>""" + table(["Stakeholder", "Concerns"], [["Participants", "Fast browsing and registration, clear errors, accessibility"], ["Organizers", "Accurate registrations, safe edit/cancel, attendee export"], ["Admins", "Account control, auditability, statistics"], ["Evaluators / instructors", "Traceability, security, documented deviations"], ["Developers", "Modularity, testability, ≥80% core coverage"]])
     b += """<h2>3.3 Component (UML) diagram</h2><div class="fig"><img src="img/component.png"><div class="cap">Figure 1 — UML component diagram: five subsystems (EventManagement, Registration, Notification, Reporting, Accounts), provided/required interfaces and the external SMTP dependency.</div></div>
@@ -214,22 +215,16 @@ def build_tp():
     b += "<h2>3.1 Security features</h2>" + table(["Security req", "Feature", "Test case(s)"], [[s[0], s[1], s[5]] for s in SECREQS])
     b += """<h1>4. Features not to be Tested</h1><ul><li>PostgreSQL engine internals, the SMTP provider's delivery and the hosting platform's internals (assumed correct; EMS's own use of them is tested).</li><li>TLS configuration and storage encryption of the hosting platform — not independently scannable locally (SEC_06 recorded “Not run”).</li><li>Cross-browser rendering on Safari and Edge, and the first-time-user usability study (needs real participants/devices) — recorded as not executed in NFT_08.</li><li>Native mobile apps, payments and external calendar integration (out of scope in the SRS).</li><li>Production uptime (99.5%) — needs a month of monitoring.</li></ul>
 <h1>5. Test Approach / Strategy</h1><h2>Levels</h2>""" + table(["Level", "ID prefix", "What it exercises", "Tooling"], [["Unit", "UT_", "A single function/validation rule in isolation", "node:test (tsx), in-memory/mocked Prisma where noted"], ["Integration", "IT_", "A route + business logic + real PostgreSQL", "node:test against Postgres (CI service container)"], ["System", "ST_", "A user-facing flow across requests/roles", "node:test route handlers; live scripts against a running production build; manual UI walkthrough where noted"], ["Acceptance", "—", "SRS acceptance criteria and exit criteria", "This plan §14"]])
-    b += """<h2>Types</h2><ul><li>Functional (60 FR cases, §5.2) · Regression (319 automated tests on every push/PR) · Performance/concurrency (§5.3) · Security (§5.1) · Accessibility (axe-core) · Recovery drill (pg_dump/pg_restore)</li></ul>
+    b += """<h2>Types</h2><ul><li>Functional (60 FR cases, Appendix A.1) · Regression (319 automated tests on every push/PR) · Performance/concurrency (Appendix A.2) · Security (§5.1, Appendix B) · Accessibility (axe-core) · Recovery drill (pg_dump/pg_restore)</li></ul>
 <p><b>Entry criteria:</b> stable build on main, test database available, test data seeded. <b>Exit criteria:</b> 100% of planned cases executed or explicitly recorded as not run with reason; all High-priority FRs pass; every failed or partial case has a documented deviation (SAD 4.6).</p>"""
     b += "<h2>5.1 Security Validation</h2><p>Each case traces to a security requirement (SR-xxx) and SRSec section. Results are from the 13 Nov 2026 run.</p>"
     b += table(["ID", "SRSec §", "Security requirement", "Test description", "Result", "Evidence"], [[s[0], s[1], ", ".join(s[5]), s[2], res(s[3]), s[4]] for s in SEC], raw_cols=(4,))
     cnt = lambda r: sum(1 for s in SEC if s[3] == r)
     b += f"<p>Security summary: {cnt('Pass')} Pass · {cnt('Partial')} Partial · {cnt('Fail')} Fail · {cnt('Not run')} Not run (of {len(SEC)}). The failed/partial cases are tracked as deviations D3–D5 and D8–D9 in SAD 4.6.</p>"
-    b += "<h2>5.2 Functional Test Cases</h2><p>60 cases (6 per FR: 2 unit, 2 integration, 2 system). “Run” = <b>A</b> automated/live re-run on 13 Nov 2026, <b>M</b> manual UI walkthrough (4 Nov; not re-run). Full IDs have the form <code>FR001-UT_01</code>.</p>"
-    for parent, cases in TESTS.items():
-        t = [f for f in FRS if f[0].startswith(parent)][0][1] if False else parent
-        names = {"FR-001": "Account Registration & Email Verification", "FR-002": "Login & Password Reset", "FR-003": "RBAC, Profile & Admin Account Management", "FR-004": "Event Creation & Update", "FR-005": "Event Cancellation & Notifications", "FR-006": "Discovery, Search, Filtering & Categories", "FR-007": "Event Registration & Duplicate Prevention", "FR-008": "Seat Capacity Check & Concurrency", "FR-009": "Waitlist, Self-Cancellation & Notifications", "FR-010": "Reporting, Export & Statistics"}
-        rows = [[fid(parent, c[0]), c[1], c[2], ", ".join(c[3]), c[4], c[5], "Pass"] for c in cases]
-        b += f"<h3>{parent} — {e(names[parent])}</h3>" + table(["Test ID", "Description", "Expected result", "Req", "Run", "Verified by", "Result"], rows, raw_cols=(6,)).replace("<td>Pass</td>", '<td><span class="pass">Pass</span></td>')
-    b += "<h2>5.3 Non-Functional Test Cases</h2>" + table(["ID", "NFR", "Description", "Result", "Evidence"], [[n[0], n[1], n[2], res(n[3]), n[4]] for n in NFT], raw_cols=(3,))
+    b += "<h2>5.2 Functional and Non-Functional Test Cases</h2><p>The 60 functional cases (6 per FR) and the 11 non-functional cases are listed in full in Appendix A. The security cases, with steps and expected results, are in Appendix B.</p>"
     b += """<h1>6. Test Environment</h1>""" + table(["Element", "Detail"], [["Runtime", "Node.js 22 (CI: Node 20), TypeScript, Next.js 14.2 App Router, Prisma 5.22"], ["Database", "PostgreSQL 16 (Docker) — real database, never a mock for concurrency cases; separate throw-away databases for the test, load and restore runs"], ["Mail", "nodemailer jsonTransport in test (no real send)"], ["CI", "GitHub Actions (.github/workflows/ci.yml): typecheck, npm test, coverage, production build"], ["Load/restore host", "One Linux laptop running app, PostgreSQL and the load generator together (pessimistic for latency)"], ["Tools", "tsx --test, Node fetch load script, axe-core 4.10.2 + puppeteer-core with Chrome, pg_dump/pg_restore, GitHub Issues/Projects"], ["Test data", "Seeded: 10,000 users, 1,000 events, 100,000 registrations (load); generated test users per run"]])
     b += """<h1>7. Test Schedule</h1>""" + table(["Milestone", "Date"], [["Sprint 1 (test case design and first execution)", "19 Oct – 25 Oct 2026"], ["Sprint 2 (automated suite, CI, Test Plan v2)", "26 Oct – 31 Oct 2026; plan issued 4 Nov"], ["Sprint 3 (NFR work and final re-execution)", "4 Nov – 10 Nov 2026"], ["Full re-run incl. load, recovery, accessibility, security", "13 Nov 2026"]])
-    b += """<h1>8. Test Deliverables</h1><ul><li>This Test Plan and Documents/TEST-CASE_DOCUMENT.pdf (Sprint 1 execution log)</li><li>Automated tests: tests/*.test.ts (319) and scripts/test_fr*.ts (74 live checks)</li><li>Reports (docs/reports/): test-run.txt, coverage-report.txt, live-api-test-run.txt, fault-injection/ (fail→fix demonstration)</li><li>Documents/TRACEABILITY_MATRICES.pdf (SRS→Test and Security→Test lists)</li><li>Defect/gap list: SAD 4.6 and GitHub issues</li></ul>
+    b += """<h1>8. Test Deliverables</h1><ul><li>This Test Plan (it replaces the Sprint 1 test-case document)</li><li>Automated tests: tests/*.test.ts (319) and scripts/test_fr*.ts (74 live checks)</li><li>Reports (docs/reports/): test-run.txt, coverage-report.txt, live-api-test-run.txt</li><li>Documents/TRACEABILITY_MATRICES.pdf (SRS→Test and Security→Test lists)</li><li>Defect/gap list: SAD 4.6 and GitHub issues</li></ul>
 <h1>9. Roles and Responsibilities</h1>""" + table(["Role", "Name", "Responsibility"], [["QA / Test Lead", "Amogh Herle (PES1UG24CS653)", "Plan, execute and report; owns FR-001–003 and security tests"], ["Test Engineer / Developer", "Shravani Mallur (PES1UG24CS621)", "Events and notifications tests (FR-004–006), accessibility (NFR-006)"], ["Test Engineer / Developer", "Arjun Bhat (PES1UG24CS655)", "Registration, concurrency and reporting tests (FR-007–010)"], ["Product Owner / Approver", "Repository owner and course coordinator", "Review PRs, approve results and sign off"]])
     b += """<h1>10. Risks and Mitigation</h1>""" + table(["Risk", "Mitigation"], [["Concurrency defects invisible to mocks", "Run concurrency cases against real PostgreSQL; verified at 100 concurrent requests"], ["Local load test not representative of production", "Report numbers with caveats; repeat on a staging deployment"], ["Unreviewed merges break main", "CI on every PR; reverts #52–#54; require review before merge"], ["Uncommitted local changes diverge from main", "Results are for main; local WIP flagged separately (SEC_03, SEC_10)"], ["No human participants for usability study", "Recorded as not executed; schedule a session"]])
     b += """<h1>11. Assumptions &amp; Dependencies</h1><ul><li>PostgreSQL 16 and Node are available to run the suite; CI service container is healthy.</li><li>Test accounts and data are generated per run; no production data is used.</li><li>SMTP is replaced by jsonTransport in tests.</li><li>Hosting platform provides TLS and storage encryption as documented.</li></ul>
@@ -245,17 +240,26 @@ def build_tp():
         rows.append([n[0], n[2], ", ".join([x[0] for x in rs] + sec), worst])
     b += table(["Req ID", "Requirement", "Test case(s)", "Overall result"], [[r[0], r[1], r[2], res(r[3])] for r in rows], raw_cols=(3,))
     b += "<h2>13.2 Security requirement → Test</h2>" + table(["Security req", "SRSec §", "Test case(s)", "Result"], [[s[0], s[2], s[5], res(s[6])] for s in SECREQS], raw_cols=(3,))
-    b += f"""<h1>14. Test Metrics &amp; Reporting</h1>""" + table(["Metric", "Value (13 Nov 2026)"], [["Automated tests (tests/*.test.ts, 15 files)", f"{STATS['auto_pass']} / {STATS['auto_total']} pass, 0 fail"], ["Live API checks (scripts/test_fr*.ts, 6 scripts)", f"{STATS['live_pass']} / {STATS['live_total']} pass, 0 fail"], ["Functional cases (§5.2)", f"60 / 60 Pass ({STATS['func_auto']} verified by automated re-run today, {STATS['func_manual']} manual UI cases carried from 4 Nov)"], ["Non-functional cases (§5.3)", f"{n_pass} Pass · {sum(1 for n in NFT if n[3]=='Partial')} Partial · {sum(1 for n in NFT if n[3]=='Fail')} Fail (of {len(NFT)})"], ["Security validation (§5.1)", f"{s_pass} Pass · {cnt('Partial')} Partial · {cnt('Fail')} Fail · {cnt('Not run')} Not run (of {len(SEC)})"], ["Line coverage", f"{STATS['coverage']} overall; core modules ≥ 92% (NFR-007 target 80%)"], ["Requirement coverage", "20/20 FRs and 7/7 NFRs have at least one executed test case; 12/12 security requirements mapped"], ["Fail → fix demonstration", "3 injected faults: 250/270 pass (20 fail), after correction 270/270 (docs/reports/fault-injection/)"]])
+    b += f"""<h1>14. Test Metrics &amp; Reporting</h1>""" + table(["Metric", "Value (13 Nov 2026)"], [["Automated tests (tests/*.test.ts, 15 files)", f"{STATS['auto_pass']} / {STATS['auto_total']} pass, 0 fail"], ["Live API checks (scripts/test_fr*.ts, 6 scripts)", f"{STATS['live_pass']} / {STATS['live_total']} pass, 0 fail"], ["Functional cases (§5.2)", f"60 / 60 Pass ({STATS['func_auto']} verified by automated re-run today, {STATS['func_manual']} manual UI cases carried from 4 Nov)"], ["Non-functional cases (§5.3)", f"{n_pass} Pass · {sum(1 for n in NFT if n[3]=='Partial')} Partial · {sum(1 for n in NFT if n[3]=='Fail')} Fail (of {len(NFT)})"], ["Security validation (§5.1)", f"{s_pass} Pass · {cnt('Partial')} Partial · {cnt('Fail')} Fail · {cnt('Not run')} Not run (of {len(SEC)})"], ["Line coverage", f"{STATS['coverage']} overall; core modules ≥ 92% (NFR-007 target 80%)"], ["Requirement coverage", "20/20 FRs and 7/7 NFRs have at least one executed test case; 12/12 security requirements mapped"]])
     b += """<h2>Open items (not silently marked Pass)</h2><ul><li><b>NFT_02</b> latency at 500 concurrent users fails (D2).</li><li><b>NFT_08</b> usability study not run (D7).</li><li><b>NFT_07</b> daily backup and uptime monitoring not configured (D6); <b>SEC_06</b> not independently run (D9).</li></ul>
 <p><b>Reports:</b> daily execution status via CI; final summary is this section and docs/reports/.</p>
 <h1>15. Approvals</h1>""" + table(["Role", "Name", "Signature / Date"], [["QA Lead", "Amogh Herle", ""], ["Dev Lead", "Shravani Mallur / Arjun Bhat", ""], ["Product Owner / Course Coordinator", "", ""]])
+    b += "<h1 class='pb'>Appendix A. Detailed Test Cases</h1><h2>A.1 Functional Test Cases</h2><p>60 cases (6 per FR: 2 unit, 2 integration, 2 system). “Run” = <b>A</b> automated/live re-run on 13 Nov 2026, <b>M</b> manual UI walkthrough (4 Nov; not re-run). Full IDs have the form <code>FR001-UT_01</code>.</p>"
+    for parent, cases in TESTS.items():
+        t = [f for f in FRS if f[0].startswith(parent)][0][1] if False else parent
+        names = {"FR-001": "Account Registration & Email Verification", "FR-002": "Login & Password Reset", "FR-003": "RBAC, Profile & Admin Account Management", "FR-004": "Event Creation & Update", "FR-005": "Event Cancellation & Notifications", "FR-006": "Discovery, Search, Filtering & Categories", "FR-007": "Event Registration & Duplicate Prevention", "FR-008": "Seat Capacity Check & Concurrency", "FR-009": "Waitlist, Self-Cancellation & Notifications", "FR-010": "Reporting, Export & Statistics"}
+        rows = [[fid(parent, c[0]), c[1], c[2], ", ".join(c[3]), c[4], c[5], "Pass"] for c in cases]
+        b += f"<h3>{parent} — {e(names[parent])}</h3>" + table(["Test ID", "Description", "Expected result", "Req", "Run", "Verified by", "Result"], rows, raw_cols=(6,)).replace("<td>Pass</td>", '<td><span class="pass">Pass</span></td>')
+    b += "<h2>A.2 Non-Functional Test Cases</h2>" + table(["ID", "NFR", "Description", "Result", "Evidence"], [[n[0], n[1], n[2], res(n[3]), n[4]] for n in NFT], raw_cols=(3,))
+    b += "<h1 class=\"pb\">Appendix B. Security Requirements Test Cases</h1><p>Each case verifies one or more security requirements (SR-xxx) from the Security Requirements Specification. Results are from the latest run.</p>"
+    b += table(["ID", "SRSec §", "Requirement(s)", "Test steps", "Expected result", "Result", "Evidence"], [[x[0], x[1], ", ".join(x[5]), SEC_STEPS[x[0]][0], SEC_STEPS[x[0]][1], res(x[3]), x[4]] for x in SEC], raw_cols=(5,))
     return page("Test Plan", b)
 
 # --------------------------------------------------------------------------- traceability
 def build_trace():
     tm = tests_for()
     b = f'<h1 class="t" style="margin-top:10px">Traceability Matrices</h1><p class="sub">Event Management System — generated {DATE} from the same data as the SRS and Test Plan</p>'
-    b += "<h1>List 1 — SRS requirement → test case (forward trace)</h1><p>Test IDs: functional <code>FRnnn-UT/IT/ST_nn</code> (Test Plan §5.2), non-functional <code>NFT_nn</code> (§5.3), security <code>SEC_nn</code> (§5.1).</p>"
+    b += "<h1>List 1 — SRS requirement → test case (forward trace)</h1><p>Test IDs: functional <code>FRnnn-UT/IT/ST_nn</code> (Test Plan Appendix A.1), non-functional <code>NFT_nn</code> (Appendix A.2), security <code>SEC_nn</code> (§5.1, Appendix B).</p>"
     rows = []
     for f in FRS:
         ids = tm.get(f[0], [])
@@ -281,6 +285,36 @@ def build_trace():
     b += '<div class="note">Failing or partial security items (SEC_03, SEC_09, SEC_10, SEC_11, SEC_13) are documented deviations D3, D4, D5, D8 in SAD 4.6. SEC_13 (demo role header accepted without a session) was discovered during this review.</div>'
     return page("Traceability Matrices", b)
 
+
+# --------------------------------------------------------------------------- security requirements specification
+def build_security():
+    rate = {"High": "fail", "Medium": "part", "Low": "pass"}
+    b = '<h1 class="t">Security Requirements Specification</h1><p class="sub">Event Management System — SE Mini Project</p>'
+    b += f'<table class="meta"><tr><td><b>Authors:</b></td><td>{e(" · ".join(TEAM))}</td></tr><tr><td><b>Date:</b></td><td>{DATE}</td></tr><tr><td><b>Related:</b></td><td>SRS_DOCUMENT.pdf (section 5.1), SAD_DOCUMENT.pdf (section 3.9), TEST-PLAN_DOCUMENT.pdf (5.1, Appendix B)</td></tr></table>'
+    b += '<h1>1. Introduction</h1><h2>1.1 Purpose</h2><p>This document defines the security protocols and constraints of the Event Management System (EMS): what must be protected, from whom, how risky each threat is, which objectives follow, and the requirements that deliver them. It is the source of the security requirements SR-001 to SR-012 used in the SRS, the SAD and the Test Plan.</p>'
+    b += '<h2>1.2 Scope</h2><p>The EMS web application, its API, its PostgreSQL database and the email it sends. Hosting, network and operating-system hardening are outside the application and are noted where a requirement depends on them (SR-006, SR-007).</p>'
+    b += '<h1>2. Assets and Stakeholders</h1>' + table(["Asset", "Stakeholders", "Why it matters"], [list(x) for x in SEC_ASSETS])
+    b += '<h1>3. Threats and Potential Attackers</h1>' + table(["Threat", "Threat agent", "Possible weakness", "Potential impact"], [list(x) for x in SEC_THREATS])
+    b += '<h1>4. Security Risk Assessment (SRA)</h1><p>Likelihood and impact are rated Low, Medium or High before mitigation; the rating is the overall priority.</p>'
+    b += table(["Risk", "Likelihood", "Impact", "Rating"], [[r[0], r[1], r[2], f'<span class="{rate[r[3]]}">{r[3]}</span>'] for r in SEC_RISKS], raw_cols=(3,))
+    b += '<h1>5. Security Objectives</h1>' + table(["ID", "Objective", "Description"], [list(x) for x in SEC_OBJ])
+    b += '<h1>6. Security Requirements</h1>'
+    rows = []
+    for q in SECREQS:
+        area = SEC_AREA[q[2].split(".")[0]]
+        rows.append([q[0], area, q[1], f"{q[5]}; enforced in: {q[7]}"])
+    b += table(["ID", "Area", "Requirement", "Verification / acceptance"], rows)
+    b += '<h1>7. Risk Mitigation Plan</h1>' + table(["Risk", "Mitigation"], [list(x) for x in SEC_MITIGATION])
+    b += '<h1>8. Threat Modelling Notes</h1><p>Threats grouped by the STRIDE categories and mapped to the objectives and requirements that address them.</p>' + table(["Risk / concern", "Objective", "Requirements"], [list(x) for x in SEC_MODEL])
+    b += '<h1>9. Requirement Traceability</h1>'
+    secmap = {x[0]: x for x in SEC}
+    tr = []
+    for q in SECREQS:
+        tests = [t.strip() for t in q[5].split(",")]
+        tr.append([q[0], q[3], q[4], ", ".join(tests), "; ".join(f"{t} {secmap[t][3]}" for t in tests), res(q[6])])
+    b += table(["Requirement", "Objective", "SRS requirement", "Test case(s)", "Results", "Status"], tr, raw_cols=(5,))
+    return page("Security Requirements Specification", b)
+
 def render(name, html_text, pdf):
     p = os.path.join(HERE, name + ".html")
     open(p, "w").write(html_text)
@@ -292,3 +326,4 @@ if __name__ == "__main__":
     render("SAD", build_sad(), "SAD_DOCUMENT.pdf")
     render("TESTPLAN", build_tp(), "TEST-PLAN_DOCUMENT.pdf")
     render("TRACEABILITY", build_trace(), "TRACEABILITY_MATRICES.pdf")
+    render("SECURITY", build_security(), "SECURITY_DOCUMENT.pdf")

@@ -185,3 +185,100 @@ SEC = [
 
 # Final stats for the execution summary
 STATS = dict(auto_total=319, auto_pass=319, live_total=74, live_pass=74, coverage="93.18%", func_cases=60, func_auto=58, func_manual=2)
+
+
+# ---- Security Requirements Specification content (Documents/SECURITY_DOCUMENT.pdf) ----
+# asset, stakeholders, why it matters
+SEC_ASSETS = [
+ ("User credentials (password hashes, verification and reset tokens)", "All users, Admin", "Compromise leads to account takeover."),
+ ("Personal data (name, email address)", "All users", "Privacy; the email address is also the channel for notifications."),
+ ("Session cookies", "All users", "A stolen or forged cookie lets someone act as that user."),
+ ("Events and categories", "Organizers, Admin", "Participants rely on correct event details; tampering misleads them."),
+ ("Registrations and waitlist", "Participants, Organizers", "Seat counts must be exact; overbooking or duplicates damage trust."),
+ ("Participant lists and exports", "Organizers, Admin", "They contain personal data and must reach only the owning organizer or an admin."),
+ ("Administrative functions (suspend, delete, categories)", "Admin", "Abuse would give control over every account and the event catalogue."),
+ ("Audit and application logs", "Admin, maintainers", "Evidence for investigation; must not leak secrets or be altered."),
+ ("Email notification channel", "Participants, Organizers", "Links and content can be abused for phishing or leak event details."),
+ ("Platform and database availability", "All users", "Events have fixed dates; downtime or data loss has real cost."),
+]
+
+# threat, threat agent, possible weakness, potential impact
+SEC_THREATS = [
+ ("Brute-force or credential stuffing", "Outside attacker", "Unlimited login attempts", "Account takeover"),
+ ("Account enumeration", "Outside attacker", "Different responses for known and unknown emails", "Targeted phishing and guessing"),
+ ("Session hijacking or forgery", "Outside attacker, malicious script", "Cookie readable by scripts or not signed", "Impersonation of a user"),
+ ("Privilege escalation", "Participant, Organizer", "Missing server-side role checks; trusting a client-supplied role", "Unauthorized organizer or admin actions"),
+ ("Insecure direct object reference (IDOR)", "Authenticated user", "Object IDs accepted without an ownership check", "Editing, cancelling or exporting another organizer's data"),
+ ("SQL injection", "Outside attacker", "Queries built from user text", "Data theft or corruption"),
+ ("Cross-site scripting (XSS)", "Outside attacker", "Unescaped user text in pages and emails", "Script runs in a victim's browser; phishing"),
+ ("Cross-site request forgery (CSRF)", "Malicious website", "State-changing requests accepted from other sites", "Actions performed as the logged-in victim"),
+ ("Token reuse or guessing", "Outside attacker", "Reusable, predictable or non-expiring links", "Account activation or password reset takeover"),
+ ("Race condition on registration", "Concurrent users, scripts", "Non-atomic seat check", "Overbooking and duplicate registrations"),
+ ("Secrets in logs", "Insider, attacker with log access", "Plain-text passwords or tokens written to logs", "Credential disclosure"),
+ ("Data loss", "Hardware failure, operator error", "No tested backup and restore", "Loss of events and registrations"),
+]
+
+# risk, likelihood, impact, rating
+SEC_RISKS = [
+ ("Brute-force or credential stuffing", "High", "High", "High"),
+ ("Account enumeration", "Medium", "Low", "Low"),
+ ("Session hijacking or forgery", "Medium", "High", "High"),
+ ("Privilege escalation", "Medium", "High", "High"),
+ ("IDOR on events and exports", "Medium", "High", "High"),
+ ("SQL injection", "Low", "High", "Medium"),
+ ("Cross-site scripting", "Medium", "Medium", "Medium"),
+ ("Cross-site request forgery", "Medium", "Medium", "Medium"),
+ ("Token reuse or guessing", "Low", "High", "Medium"),
+ ("Overbooking race condition", "Medium", "Medium", "Medium"),
+ ("Secrets in logs", "Low", "Medium", "Low"),
+ ("Data loss", "Low", "High", "Medium"),
+]
+
+# risk, mitigation (as implemented)
+SEC_MITIGATION = [
+ ("Brute-force or credential stuffing", "Account locks for 15 minutes after 5 consecutive failed logins (lib/loginLockout.ts); lock events are audit-logged."),
+ ("Account enumeration", "Login and forgot-password return the same response whether or not the email exists."),
+ ("Session hijacking or forgery", "HMAC-signed, HttpOnly, SameSite=Lax cookie (Secure in production); 30-minute sliding idle timeout (middleware.ts)."),
+ ("Privilege escalation", "Roles re-read from the database on every request; the demo role header is ignored in production (lib/auth.ts)."),
+ ("IDOR on events and exports", "Ownership checks (event.organizerId) in the event, export and registration routes."),
+ ("SQL injection", "Prisma parameterized queries only; no raw SQL in lib/ or app/api/."),
+ ("Cross-site scripting", "zod input validation, escapeHtml in email templates, React output escaping, CSV formula neutralisation."),
+ ("Cross-site request forgery", "SameSite=Lax cookie plus an Origin/Host check on every state-changing /api request (middleware.ts, lib/csrf.ts)."),
+ ("Token reuse or guessing", "Random single-use tokens with expiry, stored only as SHA-256 hashes (lib/tokens.ts)."),
+ ("Overbooking race condition", "Per-event lock plus a PostgreSQL SERIALIZABLE transaction (lib/registration.ts)."),
+ ("Secrets in logs", "Central logger and AuditLog record action, actor and time only; passwords and tokens are never passed to them."),
+ ("Data loss", "Restore drill with pg_dump and pg_restore verified locally; a scheduled daily backup is not yet configured (deviation D6)."),
+]
+
+# concern (STRIDE), objective, requirements
+SEC_MODEL = [
+ ("Spoofing: pretending to be another user", "SO-1, SO-2", "SR-001, SR-002, SR-003, SR-012"),
+ ("Tampering: changing data or requests", "SO-2", "SR-004, SR-005, SR-008, SR-009, SR-010"),
+ ("Repudiation: denying an action", "SO-3", "SR-011"),
+ ("Information disclosure: reading data without permission", "SO-1", "SR-001, SR-006, SR-007, SR-012"),
+ ("Denial of service: blocking legitimate use", "SO-3", "SR-003"),
+ ("Elevation of privilege: gaining a higher role", "SO-2", "SR-004, SR-005"),
+]
+
+# SRSec section prefix -> area
+SEC_AREA = {"2": "Authentication and identity", "3": "Access control", "4": "Data security", "5": "Input validation and output encoding", "6": "Auditing and logging"}
+
+# case id -> (steps, expected result)
+SEC_STEPS = {
+ "SEC_01": ("1. Sign up a test user. 2. Read the stored value in the database. 3. Search server logs for the password.", "The stored value is a bcrypt hash (starts with $2) that differs from the password; the password is absent from logs."),
+ "SEC_02": ("1. Log in and capture the Set-Cookie header. 2. Alter one character of the cookie and replay it. 3. Replay an expired cookie.", "Cookie is HttpOnly and SameSite=Lax (Secure in production); tampered and expired cookies are rejected."),
+ "SEC_03": ("1. Submit five wrong passwords for one account. 2. Submit the correct password within 15 minutes.", "The fifth failure locks the account (HTTP 423) and the correct password is refused until the lock expires."),
+ "SEC_04": ("1. Call an Organizer-only and an Admin-only endpoint as a Participant. 2. Repeat as an Organizer for the Admin endpoint.", "HTTP 403 and no data returned."),
+ "SEC_05": ("1. Sign in as Organizer A. 2. Send edit, cancel and export requests for Organizer B's event ID.", "HTTP 403; Organizer B's event is unchanged."),
+ "SEC_06": ("1. Open the deployed site over HTTP and HTTPS. 2. Inspect the negotiated TLS version. 3. Review storage encryption settings.", "HTTP redirects to HTTPS, TLS 1.2 or higher, storage encrypted. Not run: the project runs locally."),
+ "SEC_07": ("1. Enter SQL text such as ' OR 1=1 -- in search, filters and event fields. 2. Review the query code.", "Input is treated as plain text; no raw SQL exists in the code."),
+ "SEC_08": ("1. Create an event whose description contains a script tag. 2. View the event page and the notification email.", "The script is shown as text and never runs; HTML is escaped in the email."),
+ "SEC_09": ("1. Send a POST with an Origin header from another site and a valid session cookie. 2. Repeat with the matching Origin.", "The cross-site request is rejected with 403; the same-site request succeeds."),
+ "SEC_10": ("1. As Admin suspend a user, delete a user and cancel an event. 2. Query the AuditLog table.", "One record per action with action, actor, role and timestamp, and no secrets."),
+ "SEC_11": ("1. Log in. 2. Let the session sit idle for more than 30 minutes (or present an expired cookie). 3. Call a protected endpoint.", "The request is rejected; activity inside the window renews the session."),
+ "SEC_12": ("1. Use a verification or reset link once. 2. Use it again. 3. Use an expired link. 4. Inspect the stored token.", "Reuse and expired links are refused; only a SHA-256 hash is stored."),
+ "SEC_13": ("1. Without logging in, send a request with x-user-role: ORGANIZER in a production build.", "No identity is granted; HTTP 401."),
+ "SEC_14": ("1. Log in and request a password reset for a registered and an unregistered email.", "Identical responses for both."),
+ "SEC_15": ("1. Register a participant whose name starts with =, +, - or @. 2. Export the participant list as CSV and open it.", "The cell is neutralised and is not evaluated as a formula."),
+ "SEC_16": ("1. Suspend a user who is logged in. 2. Make a request with that user's existing session.", "The request is refused on the next call."),
+}

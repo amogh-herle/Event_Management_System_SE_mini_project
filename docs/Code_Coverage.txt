@@ -1,0 +1,37 @@
+Code Coverage (line %)
+Event Management System, node:test coverage, test and script files excluded
+Run date: 19 November 2026 (320 tests, 0 failed)
+
+File                                    Line %
+------------------------------------------------
+app/api/admin/categories/[id]/route.ts  93.84%
+app/api/admin/categories/route.ts       96.72%
+app/api/admin/statistics/route.ts       100.00%
+app/api/admin/stats/route.ts            90.91%
+app/api/categories/route.ts             91.18%
+app/api/events/[id]/export/route.ts     95.88%
+app/api/events/[id]/register/route.ts   95.92%
+app/api/events/[id]/route.ts            81.28%
+app/api/events/[id]/waitlist/route.ts   98.80%
+app/api/events/route.ts                 79.61%
+app/api/events/store.ts                 98.75%
+app/api/registrations/route.ts          83.06%
+app/api/reminders/route.ts              93.22%
+lib/auditLog.ts                         100.00%
+lib/auth.ts                             95.39%
+lib/categories.ts                       100.00%
+lib/csrf.ts                             100.00%
+lib/emailTemplates.ts                   100.00%
+lib/eventDates.ts                       90.91%
+lib/eventFilters.ts                     100.00%
+lib/export.ts                           99.74%
+lib/logger.ts                           99.40%
+lib/loginLockout.ts                     100.00%
+lib/mailer.ts                           100.00%
+lib/prisma.ts                           90.91%
+lib/registration.ts                     93.00%
+lib/session.ts                          100.00%
+lib/sessionEdge.ts                      100.00%
+lib/stats.ts                            98.82%
+lib/validation.ts                       98.66%
+ALL FILES                               93.20%
