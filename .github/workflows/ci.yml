@@ -1,6 +1,6 @@
 name: CI
 
-# Covers the checks the project's own test plan (Documents/TEST-CASE_DOCUMENT.pdf)
+# Covers the checks the project's own test plan (Documents/TEST-PLAN_DOCUMENT.pdf)
 # and SRS (Documents/SRS_DOCUMENT.pdf) call for on every change:
 #   - FR-001..FR-010 behavior: tests/*.test.ts run against a real Postgres
 #     service, the same engine production uses (SERIALIZABLE transactions
